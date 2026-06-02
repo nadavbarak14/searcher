@@ -9,6 +9,18 @@ function metaOf(node: ResearchNode): NodeMeta {
 }
 
 export class GraphStore {
+  /** Serializes all mutating operations so concurrent writers can't race on the index. */
+  private writeChain: Promise<unknown> = Promise.resolve();
+
+  private enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.writeChain.then(fn, fn); // run regardless of a prior failure
+    this.writeChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
   constructor(
     private readonly baseDir: string,
     private readonly projectId: string,
@@ -58,27 +70,26 @@ export class GraphStore {
     body: string;
     sources: string[];
   }): Promise<ResearchNode> {
-    const index = await this.loadIndex();
-    const id = `n_${index.nextSeq}`;
-    const node: ResearchNode = {
-      id,
-      kind: "finding",
-      parents: input.parents,
-      question: input.question,
-      sources: input.sources,
-      created: new Date().toISOString(),
-      body: input.body,
-    };
-    if (input.anchor) node.anchor = input.anchor;
+    return this.enqueue(async () => {
+      const index = await this.loadIndex();
+      const id = `n_${index.nextSeq}`;
+      const node: ResearchNode = {
+        id,
+        kind: "finding",
+        parents: input.parents,
+        question: input.question,
+        sources: input.sources,
+        created: new Date().toISOString(),
+        body: input.body,
+      };
+      if (input.anchor) node.anchor = input.anchor;
 
-    // 1. write the node file first (source of truth)
-    await fs.writeFile(nodePath(this.baseDir, this.projectId, id), nodeToMarkdown(node), "utf8");
-    // 2. then update the derived index
-    index.nextSeq += 1;
-    index.nodes.push(metaOf(node));
-    await this.writeIndex(index);
-
-    return node;
+      await fs.writeFile(nodePath(this.baseDir, this.projectId, id), nodeToMarkdown(node), "utf8");
+      index.nextSeq += 1;
+      index.nodes.push(metaOf(node));
+      await this.writeIndex(index);
+      return node;
+    });
   }
 
   /** Rebuild the index purely from the .md files on disk, then persist it. Source of truth = frontmatter. */
