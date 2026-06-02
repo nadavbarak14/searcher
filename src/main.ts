@@ -24,11 +24,12 @@ export interface StartOptions {
   port: number;
   dataDir: string;
   openBrowser?: boolean;
+  publicDir?: string;
 }
 
 export async function startServer(opts: StartOptions): Promise<{ app: FastifyInstance; url: string }> {
   const service = new ResearchService(opts.dataDir);
-  const app = buildApp({ dataDir: opts.dataDir, service, publicDir: path.resolve(process.cwd(), "public") });
+  const app = buildApp({ dataDir: opts.dataDir, service, publicDir: opts.publicDir ?? path.resolve(process.cwd(), "public") });
   const address = await app.listen({ port: opts.port, host: "127.0.0.1" });
   const url = address.replace("127.0.0.1", "localhost");
   if (opts.openBrowser) {
