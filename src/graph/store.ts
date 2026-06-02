@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import path from "node:path";
 import type { ResearchNode, GraphIndex, NodeMeta } from "./types.js";
 import { nodeToMarkdown, markdownToNode } from "./serialize.js";
 import { projectDir, nodePath, indexPath } from "./paths.js";
