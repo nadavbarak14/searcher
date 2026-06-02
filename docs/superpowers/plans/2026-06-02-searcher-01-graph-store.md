@@ -979,4 +979,9 @@ git commit -m "feat(graph): serialize mutations through a single-writer queue"
 ## Next milestones (not part of this plan)
 
 - **Plan 02 — Claude runner + backend API:** preflight auth + env-scrub, `claude -p` spawn (Windows `.cmd` shim, `cwd`=project folder, `--allowedTools`, `--permission-mode`, `stream-json`), stream parse + sources harvest + trailing claims block, Fastify endpoints (`/topic`, `/branch`, `/project`, `/projects`, `/synthesize`), SSE, static-serve the built frontend on one port, auto-open browser.
+
+  **Data-layer hardening carried over from the Plan 01 final review (do these in Plan 02, where the store is driven concurrently from an HTTP server):**
+  - Route `rebuildIndex` through the `GraphStore` write queue (`enqueue`) so a `load()`-triggered rebuild can't interleave with a concurrent `addFinding` index write.
+  - Make index writes atomic (write `graph.json.tmp`, then rename) so a crash mid-write can't leave a truncated index — today it's recoverable only via rebuild-on-load.
+  - Decide `createProject`'s behavior when the project folder already exists (today it silently overwrites `topic.md`/`graph.json`); guard it before wiring to the `/project` endpoint.
 - **Plan 03 — Frontend:** React Flow canvas, node-detail panel, select-text→branch, streaming display, library view, manual cross-linking.
