@@ -46,4 +46,26 @@ describe("serialize", () => {
     const parsed = markdownToNode("n_99", md);
     expect(parsed.id).toBe("n_99");
   });
+
+  it("round-trips a multi-line body", () => {
+    const n = { ...node, body: "First paragraph.\n\nSecond paragraph.\nThird line." };
+    const parsed = markdownToNode("n_1", nodeToMarkdown(n));
+    expect(parsed.body).toBe("First paragraph.\n\nSecond paragraph.\nThird line.");
+  });
+
+  it("round-trips multiple sources", () => {
+    const n = { ...node, sources: ["https://a.test", "https://b.test", "https://c.test"] };
+    const parsed = markdownToNode("n_1", nodeToMarkdown(n));
+    expect(parsed.sources).toEqual(["https://a.test", "https://b.test", "https://c.test"]);
+  });
+
+  it("throws on frontmatter with an invalid kind", () => {
+    const bad = "---\nkind: bogus\nparents: []\nquestion: Q\nsources: []\ncreated: 2026-06-02T18:30:00.000Z\n---\nbody";
+    expect(() => markdownToNode("n_bad", bad)).toThrow(/kind/);
+  });
+
+  it("throws on frontmatter missing created", () => {
+    const bad = "---\nkind: finding\nparents: []\nquestion: Q\nsources: []\n---\nbody";
+    expect(() => markdownToNode("n_bad", bad)).toThrow(/created/);
+  });
 });

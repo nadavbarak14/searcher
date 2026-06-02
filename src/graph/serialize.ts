@@ -10,6 +10,18 @@ interface FrontMatter {
   created: string;
 }
 
+function assertFrontMatter(id: string, fm: Partial<FrontMatter>): asserts fm is FrontMatter {
+  if (fm.kind !== "topic" && fm.kind !== "finding") {
+    throw new Error(`Invalid node "${id}": frontmatter "kind" must be "topic" or "finding", got ${JSON.stringify(fm.kind)}`);
+  }
+  if (!fm.created) {
+    throw new Error(`Invalid node "${id}": frontmatter "created" is required`);
+  }
+  if (fm.question === undefined) {
+    throw new Error(`Invalid node "${id}": frontmatter "question" is required`);
+  }
+}
+
 /** Serialize a node to a markdown string: YAML frontmatter + body. `id` is NOT stored (it's the filename). */
 export function nodeToMarkdown(node: ResearchNode): string {
   const data: FrontMatter = {
@@ -27,7 +39,8 @@ export function nodeToMarkdown(node: ResearchNode): string {
 /** Parse a markdown string back into a node. The id comes from the caller (the filename), not the content. */
 export function markdownToNode(id: string, md: string): ResearchNode {
   const { data, content } = matter(md);
-  const fm = data as FrontMatter;
+  const fm = data as Partial<FrontMatter>;
+  assertFrontMatter(id, fm);
   const node: ResearchNode = {
     id,
     kind: fm.kind,
@@ -35,7 +48,10 @@ export function markdownToNode(id: string, md: string): ResearchNode {
     question: fm.question,
     sources: fm.sources ?? [],
     created: fm.created,
-    body: content.replace(/\n$/, ""), // strip the single trailing newline gray-matter adds
+    // Normalize: gray-matter appends exactly one trailing newline on stringify, which we
+    // strip here so round-trips are exact. NOTE: a single trailing newline in the original
+    // body is therefore not preserved. Bodies are AI-generated prose where this is irrelevant.
+    body: content.replace(/\n$/, ""),
   };
   if (fm.anchor) node.anchor = fm.anchor;
   return node;
