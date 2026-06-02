@@ -231,6 +231,27 @@ node-to-node linking, research library (create/list/reopen), export/synthesize.
 **Deferred:** auto-detecting branch reconvergence, MCP/database, sharing/multi-user,
 fancy auto-layout, mobile, hand-picking extra sibling context per query (v1.1 toggle).
 
+## Running it — one command, zero ceremony
+
+A personal tool has to be trivial to launch. Hard requirements:
+
+- **One command starts everything.** `npm start` (after a one-time `npm install`) boots the
+  Fastify backend, which **also serves the built frontend** as static files — a *single
+  process on a single port* (e.g. `http://localhost:4317`). No separate frontend server,
+  no two terminals, no CORS setup in normal use.
+- **Auto-opens the browser** at that URL on start.
+- **Prerequisites are just two**, checked at startup by the pre-flight:
+  1. Node.js installed.
+  2. Claude Code installed and **OAuth-logged-in** (`claude setup-token`).
+  If either is missing, print a single clear instruction (the exact command to run) and
+  exit — don't start half-broken.
+- **Data lives in one obvious local folder**, configurable via one env var / flag
+  (default e.g. `~/Searcher/`), so projects are easy to find, back up, or open in Obsidian.
+- **Windows-first**: `npm start` must work from PowerShell as-is (mind the `claude.cmd`
+  shim and path quoting); no WSL or bash required.
+- Dev convenience (Vite HMR for the frontend, watch mode for the backend) is a separate
+  `npm run dev`; the default `npm start` is the simple production-style single-process run.
+
 ## Proposed stack
 
 - **Frontend:** React + Vite + React Flow (node/edge canvas built for interactive graphs).
