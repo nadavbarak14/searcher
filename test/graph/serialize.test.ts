@@ -1,0 +1,49 @@
+import { describe, it, expect } from "vitest";
+import { nodeToMarkdown, markdownToNode } from "../../src/graph/serialize.js";
+import type { ResearchNode } from "../../src/graph/types.js";
+
+const node: ResearchNode = {
+  id: "n_1",
+  kind: "finding",
+  parents: ["topic"],
+  anchor: { text: "transfer across models", offset: 412, occurrence: 1 },
+  question: "Why do adversarial examples transfer?",
+  sources: ["https://example.com/a"],
+  created: "2026-06-02T18:30:00.000Z",
+  body: "Because models converge on similar decision boundaries.",
+};
+
+describe("serialize", () => {
+  it("round-trips a finding node through markdown", () => {
+    const md = nodeToMarkdown(node);
+    const parsed = markdownToNode("n_1", md);
+    expect(parsed).toEqual(node);
+  });
+
+  it("emits frontmatter then body", () => {
+    const md = nodeToMarkdown(node);
+    expect(md.startsWith("---\n")).toBe(true);
+    expect(md).toContain("Because models converge");
+  });
+
+  it("round-trips a topic node with no anchor and empty body", () => {
+    const topic: ResearchNode = {
+      id: "topic",
+      kind: "topic",
+      parents: [],
+      question: "AI security",
+      sources: [],
+      created: "2026-06-02T18:30:00.000Z",
+      body: "",
+    };
+    const parsed = markdownToNode("topic", nodeToMarkdown(topic));
+    expect(parsed).toEqual(topic);
+    expect(parsed.anchor).toBeUndefined();
+  });
+
+  it("uses the id argument, not any id in the frontmatter", () => {
+    const md = nodeToMarkdown(node);
+    const parsed = markdownToNode("n_99", md);
+    expect(parsed.id).toBe("n_99");
+  });
+});
