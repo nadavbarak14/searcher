@@ -1,0 +1,12 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, sans-serif; color: #1a1a1a; }
+.app { display: flex; flex-direction: column; height: 100vh; }
+.topbar { padding: 10px 16px; border-bottom: 1px solid #e2e2e2; display: flex; gap: 12px; align-items: center; }
+.main { flex: 1; display: flex; min-height: 0; }
+.canvas { flex: 1; min-width: 0; }
+.detail { width: 380px; border-left: 1px solid #e2e2e2; padding: 16px; overflow: auto; }
+.library { padding: 32px; max-width: 720px; margin: 0 auto; }
+.proj-list li { margin: 6px 0; cursor: pointer; color: #1558d6; }
+button { cursor: pointer; }
+.muted { color: #777; font-size: 13px; }
+.sources a { display: block; font-size: 12px; }
