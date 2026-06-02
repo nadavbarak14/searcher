@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import type { ResearchNode, GraphIndex, NodeMeta } from "./types.js";
 import { nodeToMarkdown, markdownToNode } from "./serialize.js";
 import { projectDir, nodePath, indexPath } from "./paths.js";
@@ -78,5 +79,35 @@ export class GraphStore {
     await this.writeIndex(index);
 
     return node;
+  }
+
+  /** Rebuild the index purely from the .md files on disk, then persist it. Source of truth = frontmatter. */
+  async rebuildIndex(): Promise<GraphIndex> {
+    const dir = projectDir(this.baseDir, this.projectId);
+    const entries = await fs.readdir(dir);
+    const ids = entries.filter((f) => f.endsWith(".md")).map((f) => f.slice(0, -3));
+
+    const nodes: NodeMeta[] = [];
+    let topic = "";
+    let maxSeq = 0;
+    for (const id of ids) {
+      const node = await this.getNode(id);
+      nodes.push(metaOf(node));
+      if (node.kind === "topic") topic = node.question;
+      const m = /^n_(\d+)$/.exec(id);
+      if (m) maxSeq = Math.max(maxSeq, Number(m[1]));
+    }
+    const index: GraphIndex = { topic, nextSeq: maxSeq + 1, nodes };
+    await this.writeIndex(index);
+    return index;
+  }
+
+  /** Load the index, rebuilding from .md files if it is missing or unreadable. */
+  async load(): Promise<GraphIndex> {
+    try {
+      return await this.loadIndex();
+    } catch {
+      return await this.rebuildIndex();
+    }
   }
 }
