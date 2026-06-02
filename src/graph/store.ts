@@ -35,4 +35,48 @@ export class GraphStore {
     const md = await fs.readFile(nodePath(this.baseDir, this.projectId, id), "utf8");
     return markdownToNode(id, md);
   }
+
+  /** Read the derived index. */
+  async loadIndex(): Promise<GraphIndex> {
+    const raw = await fs.readFile(indexPath(this.baseDir, this.projectId), "utf8");
+    return JSON.parse(raw) as GraphIndex;
+  }
+
+  private async writeIndex(index: GraphIndex): Promise<void> {
+    await fs.writeFile(indexPath(this.baseDir, this.projectId), JSON.stringify(index, null, 2), "utf8");
+  }
+
+  /**
+   * Add a finding node. Allocates the next id, writes the .md FIRST, then updates the index.
+   * (If the process dies between the two writes, rebuildIndex() reconciles on next load.)
+   */
+  async addFinding(input: {
+    parents: string[];
+    anchor?: import("./types.js").Anchor;
+    question: string;
+    body: string;
+    sources: string[];
+  }): Promise<ResearchNode> {
+    const index = await this.loadIndex();
+    const id = `n_${index.nextSeq}`;
+    const node: ResearchNode = {
+      id,
+      kind: "finding",
+      parents: input.parents,
+      question: input.question,
+      sources: input.sources,
+      created: new Date().toISOString(),
+      body: input.body,
+    };
+    if (input.anchor) node.anchor = input.anchor;
+
+    // 1. write the node file first (source of truth)
+    await fs.writeFile(nodePath(this.baseDir, this.projectId, id), nodeToMarkdown(node), "utf8");
+    // 2. then update the derived index
+    index.nextSeq += 1;
+    index.nodes.push(metaOf(node));
+    await this.writeIndex(index);
+
+    return node;
+  }
 }
