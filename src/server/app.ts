@@ -1,19 +1,14 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyStatic from "@fastify/static";
 import fs from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ResearchService } from "../service.js";
 import { GraphStore } from "../graph/store.js";
 
 export interface AppDeps {
   dataDir: string;
   service: ResearchService;
-  publicDir?: string;
+  publicDir: string;
 }
-
-const here = path.dirname(fileURLToPath(import.meta.url));
-const defaultPublicDir = path.resolve(here, "../../../public");
 
 export function buildApp(deps: AppDeps): FastifyInstance {
   const app = Fastify({ logger: false });
@@ -56,7 +51,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return { markdown };
   });
 
-  app.register(fastifyStatic, { root: deps.publicDir ?? defaultPublicDir });
+  app.register(fastifyStatic, { root: deps.publicDir });
 
   return app;
 }

@@ -56,4 +56,10 @@ describe("runClaude", () => {
     expect(res.meta).toBeNull();
     expect(res.claims).toEqual([]);
   });
+  it("tolerates a non-JSON banner line printed before the JSON object", async () => {
+    const json = JSON.stringify({ is_error: false, result: "ok", total_cost_usd: 0, session_id: "s" });
+    const { fn } = fakeSpawn("Update available! Run npm i -g ...\n" + json);
+    const res = await runClaude({ cwd: "/p", prompt: "q", systemPrompt: "s", env: {} }, fn);
+    expect(res.answer).toBe("ok");
+  });
 });

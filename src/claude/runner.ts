@@ -40,6 +40,20 @@ function asStringArray(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 }
 
+function parseResultJson(stdout: string): Record<string, unknown> {
+  const trimmed = stdout.trim();
+  try {
+    return JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    const first = trimmed.indexOf("{");
+    const last = trimmed.lastIndexOf("}");
+    if (first !== -1 && last > first) {
+      return JSON.parse(trimmed.slice(first, last + 1)) as Record<string, unknown>;
+    }
+    throw new Error("no JSON object found");
+  }
+}
+
 export async function runClaude(input: RunInput, spawnFn: SpawnFn = defaultSpawn): Promise<ClaudeResult> {
   const args = [
     "-p", input.prompt,
@@ -54,7 +68,7 @@ export async function runClaude(input: RunInput, spawnFn: SpawnFn = defaultSpawn
 
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(stdout) as Record<string, unknown>;
+    parsed = parseResultJson(stdout);
   } catch {
     throw new Error(`claude -p exited (code ${code}) with unparseable output: ${stdout.slice(0, 300)}`);
   }

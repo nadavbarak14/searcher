@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import { GraphStore } from "./graph/store.js";
 import { projectDir } from "./graph/paths.js";
 import type { ResearchNode, Anchor } from "./graph/types.js";
@@ -38,6 +39,17 @@ function parseFindings(meta: Record<string, unknown> | null): Finding[] {
     .filter((f) => f.question || f.body);
 }
 
+async function uniqueProjectId(baseDir: string, slug: string): Promise<string> {
+  let id = slug;
+  let n = 2;
+  // projectDir(baseDir, id) must not already exist
+  // eslint-disable-next-line no-await-in-loop
+  while (await fs.stat(projectDir(baseDir, id)).then(() => true, () => false)) {
+    id = `${slug}-${n++}`;
+  }
+  return id;
+}
+
 /** Default production runner: delegates to runClaude with the real process env. */
 export const defaultRun: RunFn = ({ cwd, prompt, systemPrompt }) =>
   runClaude({ cwd, prompt, systemPrompt, env: process.env as Record<string, string | undefined> });
@@ -48,16 +60,17 @@ export class ResearchService {
     private readonly run: RunFn = defaultRun,
   ) {}
 
-  async createTopic(topic: string): Promise<{ projectId: string }> {
-    const projectId = projectIdFromTopic(topic);
+  async createTopic(topic: string): Promise<{ projectId: string; findingCount: number }> {
+    const projectId = await uniqueProjectId(this.baseDir, projectIdFromTopic(topic));
     const store = new GraphStore(this.baseDir, projectId);
     await store.createProject(topic);
     const cwd = projectDir(this.baseDir, projectId);
     const res = await this.run({ cwd, prompt: rootPrompt(topic), systemPrompt: ROOT_SYSTEM });
-    for (const f of parseFindings(res.meta)) {
+    const findings = parseFindings(res.meta);
+    for (const f of findings) {
       await store.addFinding({ parents: ["topic"], question: f.question, body: f.body, sources: f.sources });
     }
-    return { projectId };
+    return { projectId, findingCount: findings.length };
   }
 
   async branch(projectId: string, input: { parentId: string; anchor: Anchor; question: string }): Promise<ResearchNode> {

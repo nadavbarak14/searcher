@@ -22,11 +22,21 @@ describe("ResearchService.createTopic", () => {
       meta: { findings: [ { question: "Q1", body: "B1", sources: ["https://1"] }, { question: "Q2", body: "B2", sources: [] } ] },
     });
     const svc = svcWith(run);
-    const { projectId } = await svc.createTopic("AI security");
+    const result = await svc.createTopic("AI security");
+    const { projectId } = result;
     const store = new GraphStore(baseDir, projectId);
     const index = await store.load();
     expect(index.topic).toBe("AI security");
     expect(index.nodes.filter((n) => n.kind === "finding")).toHaveLength(2);
+    expect(result.findingCount).toBe(2);
+  });
+  it("does not clobber an existing project with the same slug", async () => {
+    const run: RunFn = async () => ({ answer: "", claims: [], sources: [], costUsd: 0, sessionId: "s", meta: { findings: [{ question: "Q", body: "B", sources: [] }] } });
+    const svc = svcWith(run);
+    const a = await svc.createTopic("AI security");
+    const b = await svc.createTopic("AI security");
+    expect(a.projectId).toBe("ai-security");
+    expect(b.projectId).toBe("ai-security-2");
   });
 });
 
