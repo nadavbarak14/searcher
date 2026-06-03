@@ -3,7 +3,7 @@ import { Library } from "./components/Library";
 import { GraphView } from "./components/GraphView";
 import { NodeDetail } from "./components/NodeDetail";
 import { api } from "./api";
-import type { GraphIndex, ResearchNode, Anchor } from "./types";
+import type { GraphIndex, ResearchNode } from "./types";
 
 export function App() {
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -18,15 +18,6 @@ export function App() {
   async function openNode(nodeId: string) {
     if (!projectId) return;
     setNode(await api.getNode(projectId, nodeId));
-  }
-
-  async function branch(anchor: Anchor, question: string) {
-    if (!projectId || !node) return;
-    setBusy(true);
-    try {
-      await api.branch(projectId, node.id, anchor, question);
-      await refresh(projectId);
-    } finally { setBusy(false); }
   }
 
   async function synthesize() {
@@ -48,7 +39,15 @@ export function App() {
       <div className="main">
         {index && <GraphView index={index} onSelect={openNode} />}
         {node
-          ? <NodeDetail node={node} onBranch={branch} busy={busy} />
+          ? <NodeDetail
+              node={node}
+              projectId={projectId}
+              exploredChildren={(index?.nodes ?? [])
+                .filter((n) => n.parents.includes(node.id) && n.anchor)
+                .map((n) => ({ id: n.id, anchor: n.anchor!, question: n.question }))}
+              onChanged={() => refresh(projectId)}
+              onSelectChild={openNode}
+            />
           : <div className="detail"><p className="muted">Click a node to read it and branch questions.</p></div>}
       </div>
       {report !== null && (
