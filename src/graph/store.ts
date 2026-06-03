@@ -6,6 +6,7 @@ import { projectDir, nodePath, indexPath } from "./paths.js";
 function metaOf(node: ResearchNode): NodeMeta {
   const meta: NodeMeta = { id: node.id, kind: node.kind, parents: node.parents, question: node.question, created: node.created };
   if (node.anchor) meta.anchor = node.anchor;
+  if (node.position) meta.position = node.position;
   return meta;
 }
 
@@ -90,6 +91,27 @@ export class GraphStore {
       index.nodes.push(metaOf(node));
       await this.writeIndex(index);
       return node;
+    });
+  }
+
+  /**
+   * Persist x/y for the given node ids. Writes each node's .md (so positions survive
+   * rebuildIndex — frontmatter is the source of truth) and patches the index in one
+   * write. Unknown ids are skipped. Race-safe via the write queue.
+   */
+  async setPositions(updates: { id: string; x: number; y: number }[]): Promise<void> {
+    return this.enqueue(async () => {
+      const index = await this.loadIndex();
+      for (const u of updates) {
+        const meta = index.nodes.find((m) => m.id === u.id);
+        if (!meta) continue; // unknown id — skip
+        const pos = { x: u.x, y: u.y };
+        const node = await this.getNode(u.id);
+        node.position = pos;
+        await fs.writeFile(nodePath(this.baseDir, this.projectId, u.id), nodeToMarkdown(node), "utf8");
+        meta.position = pos;
+      }
+      await this.writeIndex(index);
     });
   }
 

@@ -41,20 +41,43 @@ describe("ResearchService.createTopic", () => {
 });
 
 describe("ResearchService.branch", () => {
-  it("creates a child finding anchored to the selection", async () => {
+  async function seed() {
     const rootRun: RunFn = async () => ({ answer: "", claims: [], sources: [], costUsd: 0, sessionId: "s", meta: { findings: [{ question: "Q1", body: "B1", sources: [] }] } });
     const { projectId } = await svcWith(rootRun).createTopic("AI security");
+    return projectId;
+  }
+
+  it("creates a child finding for a whole-node question (no anchor)", async () => {
+    const projectId = await seed();
     const branchRun: RunFn = async () => ({ answer: "Because of shared features.", claims: ["c"], sources: ["https://x"], costUsd: 0.02, sessionId: "s2", meta: null });
-    const node = await new ResearchService(baseDir, branchRun).branch(projectId, {
-      parentId: "n_1",
-      anchor: { text: "features", offset: 3, occurrence: 1 },
-      question: "why?",
-    });
+    const node = await new ResearchService(baseDir, branchRun).branch(projectId, { parentId: "n_1", question: "why?" });
     expect(node.kind).toBe("finding");
     expect(node.parents).toEqual(["n_1"]);
-    expect(node.anchor?.text).toBe("features");
+    expect(node.anchor).toBeUndefined();
     expect(node.body).toBe("Because of shared features.");
     expect(node.sources).toEqual(["https://x"]);
+  });
+
+  it("still accepts an optional anchor", async () => {
+    const projectId = await seed();
+    const branchRun: RunFn = async () => ({ answer: "x", claims: [], sources: [], costUsd: 0, sessionId: "s2", meta: null });
+    const node = await new ResearchService(baseDir, branchRun).branch(projectId, {
+      parentId: "n_1",
+      question: "q",
+      anchor: { text: "features", offset: 3, occurrence: 1 },
+    });
+    expect(node.anchor?.text).toBe("features");
+  });
+});
+
+describe("ResearchService.setPositions", () => {
+  it("delegates to the store and persists positions", async () => {
+    const rootRun: RunFn = async () => ({ answer: "", claims: [], sources: [], costUsd: 0, sessionId: "s", meta: { findings: [{ question: "Q1", body: "B1", sources: [] }] } });
+    const svc = svcWith(rootRun);
+    const { projectId } = await svc.createTopic("AI security");
+    await svc.setPositions(projectId, [{ id: "n_1", x: 5, y: 6 }]);
+    const store = new GraphStore(baseDir, projectId);
+    expect((await store.loadIndex()).nodes.find((m) => m.id === "n_1")?.position).toEqual({ x: 5, y: 6 });
   });
 });
 
@@ -68,45 +91,3 @@ describe("ResearchService.synthesize", () => {
   });
 });
 
-describe("ResearchService.batchBranch", () => {
-  async function seedProject() {
-    const rootRun: RunFn = async () => ({ answer: "", claims: [], sources: [], costUsd: 0, sessionId: "s", meta: { findings: [{ question: "Q1", body: "B1 about spoofing and forging", sources: [] }] } });
-    const { projectId } = await svcWith(rootRun).createTopic("AI security");
-    return projectId;
-  }
-
-  it("runs all questions in parallel and creates one sibling finding each, in input order", async () => {
-    const projectId = await seedProject();
-    const run: RunFn = async ({ prompt }) => ({ answer: `answer for ${prompt.includes("forge") ? "forge" : "spoof"}`, claims: [], sources: ["https://x"], costUsd: 0, sessionId: "s", meta: null });
-    const svc = new ResearchService(baseDir, run);
-    const out = await svc.batchBranch(projectId, [
-      { parentId: "n_1", anchor: { text: "spoofing", offset: 0, occurrence: 1 }, question: "why spoof?" },
-      { parentId: "n_1", anchor: { text: "forging", offset: 0, occurrence: 1 }, question: "why forge?" },
-    ]);
-    expect(out.failures).toEqual([]);
-    expect(out.created).toHaveLength(2);
-    expect(out.created.every((n) => n.parents.includes("n_1"))).toBe(true);
-    expect(out.created.map((n) => n.question)).toEqual(["why spoof?", "why forge?"]); // input order preserved
-    const ids = out.created.map((n) => n.id);
-    expect(new Set(ids).size).toBe(2); // unique ids — no index race
-  });
-
-  it("isolates failures: successes persist, the failed item is reported by index", async () => {
-    const projectId = await seedProject();
-    const run: RunFn = async ({ prompt }) => {
-      if (prompt.includes("BOOM")) throw new Error("model failed");
-      return { answer: "ok", claims: [], sources: [], costUsd: 0, sessionId: "s", meta: null };
-    };
-    const svc = new ResearchService(baseDir, run);
-    const out = await svc.batchBranch(projectId, [
-      { parentId: "n_1", anchor: { text: "spoofing", offset: 0, occurrence: 1 }, question: "fine one" },
-      { parentId: "n_1", anchor: { text: "spoofing", offset: 0, occurrence: 1 }, question: "BOOM please" },
-      { parentId: "n_1", anchor: { text: "forging", offset: 0, occurrence: 1 }, question: "another fine" },
-    ]);
-    expect(out.created).toHaveLength(2);
-    expect(out.failures).toEqual([{ index: 1, error: "model failed" }]);
-    const store = new GraphStore(baseDir, projectId);
-    const index = await store.load();
-    expect(index.nodes.filter((n) => n.kind === "finding")).toHaveLength(3); // 1 seeded + 2 new
-  });
-});

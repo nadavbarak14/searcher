@@ -53,6 +53,17 @@ describe("serialize", () => {
     expect(parsed.body).toBe("First paragraph.\n\nSecond paragraph.\nThird line.");
   });
 
+  it("round-trips a node position through frontmatter", () => {
+    const n = { ...node, position: { x: 120, y: -40 } };
+    const parsed = markdownToNode("n_1", nodeToMarkdown(n));
+    expect(parsed.position).toEqual({ x: 120, y: -40 });
+  });
+
+  it("omits position when absent", () => {
+    const parsed = markdownToNode("n_1", nodeToMarkdown(node));
+    expect(parsed.position).toBeUndefined();
+  });
+
   it("round-trips multiple sources", () => {
     const n = { ...node, sources: ["https://a.test", "https://b.test", "https://c.test"] };
     const parsed = markdownToNode("n_1", nodeToMarkdown(n));

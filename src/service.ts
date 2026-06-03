@@ -22,16 +22,6 @@ interface Finding {
   sources: string[];
 }
 
-export interface BatchItem {
-  parentId: string;
-  anchor: Anchor;
-  question: string;
-}
-export interface BatchOutcome {
-  created: ResearchNode[];
-  failures: { index: number; error: string }[];
-}
-
 function projectIdFromTopic(topic: string): string {
   const slug = topic.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
   return slug || "research";
@@ -83,48 +73,35 @@ export class ResearchService {
     return { projectId, findingCount: findings.length };
   }
 
-  async branch(projectId: string, input: { parentId: string; anchor: Anchor; question: string }): Promise<ResearchNode> {
+  /**
+   * Ask one question about a node and persist the answer as a child finding. Questions are
+   * whole-node by default; `anchor` is optional and only set for legacy text-anchored links.
+   */
+  async branch(projectId: string, input: { parentId: string; question: string; anchor?: Anchor }): Promise<ResearchNode> {
     const store = new GraphStore(this.baseDir, projectId);
     const index = await store.load();
     const parent = await store.getNode(input.parentId);
     const cwd = projectDir(this.baseDir, projectId);
-    const prompt = branchPrompt({ topic: index.topic, selection: input.anchor.text, question: input.question, ancestorTitles: [parent.question] });
+    const prompt = branchPrompt({
+      topic: index.topic,
+      selection: input.anchor?.text ?? parent.question,
+      question: input.question,
+      ancestorTitles: [parent.question],
+    });
     const res = await this.run({ cwd, prompt, systemPrompt: BRANCH_SYSTEM });
-    return store.addFinding({ parents: [input.parentId], anchor: input.anchor, question: input.question, body: res.answer, sources: res.sources });
+    const finding: Parameters<typeof store.addFinding>[0] = {
+      parents: [input.parentId],
+      question: input.question,
+      body: res.answer,
+      sources: res.sources,
+    };
+    if (input.anchor) finding.anchor = input.anchor;
+    return store.addFinding(finding);
   }
 
-  /**
-   * Run several questions about a node at once. The claude -p calls fan out in parallel;
-   * within this call persistence is race-free because all items share ONE GraphStore, whose
-   * internal write queue serializes index updates (the safety holds only for writes made
-   * through this instance — it does not guard against another GraphStore writing the same
-   * project concurrently). Per-item failures are isolated (Promise.allSettled), so one bad
-   * question never drops the others; `created` keeps input order, failures are reported by
-   * input index. Each `parentId` must already exist in the store — forward references to
-   * nodes created by this same batch are not supported and surface as per-item failures.
-   * An empty `items` array is a no-op returning `{ created: [], failures: [] }`.
-   */
-  async batchBranch(projectId: string, items: BatchItem[]): Promise<BatchOutcome> {
-    const store = new GraphStore(this.baseDir, projectId);
-    const index = await store.load();
-    const cwd = projectDir(this.baseDir, projectId);
-
-    const settled = await Promise.allSettled(
-      items.map(async (item) => {
-        const parent = await store.getNode(item.parentId);
-        const prompt = branchPrompt({ topic: index.topic, selection: item.anchor.text, question: item.question, ancestorTitles: [parent.question] });
-        const res = await this.run({ cwd, prompt, systemPrompt: BRANCH_SYSTEM });
-        return store.addFinding({ parents: [item.parentId], anchor: item.anchor, question: item.question, body: res.answer, sources: res.sources });
-      }),
-    );
-
-    const created: ResearchNode[] = [];
-    const failures: { index: number; error: string }[] = [];
-    settled.forEach((r, i) => {
-      if (r.status === "fulfilled") created.push(r.value);
-      else failures.push({ index: i, error: r.reason instanceof Error ? r.reason.message : String(r.reason) });
-    });
-    return { created, failures };
+  /** Persist user-dragged canvas coordinates for one or more nodes. */
+  async setPositions(projectId: string, updates: { id: string; x: number; y: number }[]): Promise<void> {
+    return new GraphStore(this.baseDir, projectId).setPositions(updates);
   }
 
   async synthesize(projectId: string): Promise<string> {

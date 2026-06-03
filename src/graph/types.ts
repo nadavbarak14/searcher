@@ -1,5 +1,11 @@
 export type NodeKind = "topic" | "finding";
 
+/** Canvas coordinates for a node. Persisted so the user's layout survives reloads. */
+export interface Position {
+  x: number;
+  y: number;
+}
+
 /** How a child node's selection maps back into the parent's rendered answer. */
 export interface Anchor {
   text: string;
@@ -17,6 +23,7 @@ export interface ResearchNode {
   sources: string[];
   created: string; // ISO 8601
   body: string; // markdown answer (the topic node's body is "")
+  position?: Position; // last-saved canvas coordinates (absent until the user drags it)
 }
 
 /** Lightweight per-node metadata stored in the index (everything reconstructable from .md files). */
@@ -27,6 +34,7 @@ export interface NodeMeta {
   anchor?: Anchor; // present on findings that branch from a selection; mirrors the node's anchor
   question: string;
   created: string;
+  position?: Position; // mirrors the node's saved canvas coordinates
 }
 
 /** Derived, rebuildable index for fast project loading. Source of truth is the .md frontmatter. */

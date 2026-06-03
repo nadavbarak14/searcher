@@ -1,5 +1,5 @@
 import matter from "gray-matter";
-import type { ResearchNode, NodeKind, Anchor } from "./types.js";
+import type { ResearchNode, NodeKind, Anchor, Position } from "./types.js";
 
 interface FrontMatter {
   kind: NodeKind;
@@ -8,6 +8,7 @@ interface FrontMatter {
   question: string;
   sources: string[];
   created: string;
+  position?: Position;
 }
 
 function assertFrontMatter(id: string, fm: Partial<FrontMatter>): asserts fm is FrontMatter {
@@ -32,6 +33,7 @@ export function nodeToMarkdown(node: ResearchNode): string {
     created: node.created,
   };
   if (node.anchor) data.anchor = node.anchor;
+  if (node.position) data.position = node.position;
   // gray-matter appends a trailing newline to the body; keep body verbatim.
   return matter.stringify(node.body, data);
 }
@@ -54,5 +56,6 @@ export function markdownToNode(id: string, md: string): ResearchNode {
     body: content.replace(/\n$/, ""),
   };
   if (fm.anchor) node.anchor = fm.anchor;
+  if (fm.position) node.position = fm.position;
   return node;
 }
