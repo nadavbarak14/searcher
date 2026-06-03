@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyStatic from "@fastify/static";
 import fs from "node:fs/promises";
-import type { ResearchService, BatchItem } from "../service.js";
+import type { ResearchService } from "../service.js";
 import { GraphStore } from "../graph/store.js";
 
 export interface AppDeps {
@@ -40,27 +40,29 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     Body: { parentId?: string; anchor?: { text: string; offset: number; occurrence: number }; question?: string };
   }>("/api/projects/:id/branch", async (req, reply) => {
     const { parentId, anchor, question } = req.body ?? {};
-    if (!parentId || !anchor || !question) {
-      return reply.code(400).send({ error: "parentId, anchor and question are required" });
+    if (!parentId || !question) {
+      return reply.code(400).send({ error: "parentId and question are required" });
     }
-    return deps.service.branch(req.params.id, { parentId, anchor, question });
+    const input: { parentId: string; question: string; anchor?: typeof anchor } = { parentId, question };
+    if (anchor) input.anchor = anchor;
+    return deps.service.branch(req.params.id, input);
   });
 
-  app.post<{
+  app.patch<{
     Params: { id: string };
-    Body: { items?: Partial<BatchItem>[] };
-  }>("/api/projects/:id/branch-batch", async (req, reply) => {
-    const items = req.body?.items;
-    if (!Array.isArray(items) || items.length === 0) {
-      return reply.code(400).send({ error: "items must be a non-empty array" });
+    Body: { positions?: { id: string; x: number; y: number }[] };
+  }>("/api/projects/:id/positions", async (req, reply) => {
+    const positions = req.body?.positions;
+    if (!Array.isArray(positions)) {
+      return reply.code(400).send({ error: "positions must be an array" });
     }
-    for (const it of items) {
-      if (!it?.parentId || !it.anchor || !it.question) {
-        return reply.code(400).send({ error: "each item: parentId, anchor and question are required" });
+    for (const p of positions) {
+      if (typeof p?.id !== "string" || typeof p.x !== "number" || typeof p.y !== "number") {
+        return reply.code(400).send({ error: "each position needs id:string, x:number, y:number" });
       }
     }
-    const valid: BatchItem[] = items.map((it) => ({ parentId: it.parentId!, anchor: it.anchor!, question: it.question! }));
-    return deps.service.batchBranch(req.params.id, valid);
+    await deps.service.setPositions(req.params.id, positions);
+    return { ok: true };
   });
 
   app.post<{ Params: { id: string } }>("/api/projects/:id/synthesize", async (req) => {

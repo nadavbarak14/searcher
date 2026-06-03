@@ -22,10 +22,7 @@ function stubService(over: Partial<ResearchService> = {}): ResearchService {
   return {
     createTopic: async () => ({ projectId: "ai-security", findingCount: 3 }),
     branch: async () => ({ id: "n_1", kind: "finding", parents: ["topic"], question: "q", sources: [], created: "t", body: "b" }),
-    batchBranch: async () => ({
-      created: [{ id: "n_2", kind: "finding", parents: ["n_1"], question: "q", sources: [], created: "t", body: "b" }],
-      failures: [],
-    }),
+    setPositions: async () => undefined,
     synthesize: async () => "# Report",
     ...over,
   } as unknown as ResearchService;
@@ -86,27 +83,38 @@ describe("buildApp routes", () => {
     expect(res.statusCode).toBe(404);
     await app.close();
   });
-  it("POST /branch-batch returns created + failures", async () => {
+  it("POST /branch accepts a whole-node question without an anchor", async () => {
     const app = buildApp({ dataDir, service: stubService(), publicDir });
-    const res = await app.inject({
-      method: "POST",
-      url: "/api/projects/p1/branch-batch",
-      payload: { items: [{ parentId: "n_1", anchor: { text: "x", offset: 0, occurrence: 1 }, question: "why?" }] },
-    });
+    const res = await app.inject({ method: "POST", url: "/api/projects/p1/branch", payload: { parentId: "n_1", question: "why?" } });
     expect(res.statusCode).toBe(200);
-    expect(res.json().created).toHaveLength(1);
-    expect(res.json().failures).toEqual([]);
+    expect(res.json().id).toBe("n_1");
     await app.close();
   });
-  it("POST /branch-batch 400s on empty items", async () => {
+  it("POST /branch 400s without parentId or question", async () => {
     const app = buildApp({ dataDir, service: stubService(), publicDir });
-    const res = await app.inject({ method: "POST", url: "/api/projects/p1/branch-batch", payload: { items: [] } });
+    const res = await app.inject({ method: "POST", url: "/api/projects/p1/branch", payload: { parentId: "n_1" } });
     expect(res.statusCode).toBe(400);
     await app.close();
   });
-  it("POST /branch-batch 400s when an item is missing a field", async () => {
+  it("PATCH /positions persists and returns ok", async () => {
+    let received: unknown = null;
+    const svc = stubService({ setPositions: async (_id: string, updates: unknown) => { received = updates; } } as Partial<ResearchService>);
+    const app = buildApp({ dataDir, service: svc, publicDir });
+    const res = await app.inject({ method: "PATCH", url: "/api/projects/p1/positions", payload: { positions: [{ id: "n_1", x: 1, y: 2 }] } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+    expect(received).toEqual([{ id: "n_1", x: 1, y: 2 }]);
+    await app.close();
+  });
+  it("PATCH /positions 400s on a non-array body", async () => {
     const app = buildApp({ dataDir, service: stubService(), publicDir });
-    const res = await app.inject({ method: "POST", url: "/api/projects/p1/branch-batch", payload: { items: [{ parentId: "n_1", question: "why?" }] } });
+    const res = await app.inject({ method: "PATCH", url: "/api/projects/p1/positions", payload: { positions: "nope" } });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+  it("PATCH /positions 400s when an entry is malformed", async () => {
+    const app = buildApp({ dataDir, service: stubService(), publicDir });
+    const res = await app.inject({ method: "PATCH", url: "/api/projects/p1/positions", payload: { positions: [{ id: "n_1", x: "no" }] } });
     expect(res.statusCode).toBe(400);
     await app.close();
   });
