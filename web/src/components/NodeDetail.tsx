@@ -25,10 +25,9 @@ export function NodeDetail({
   }
 
   function addQuestion() {
-    const text = selection || node.body.slice(0, 40);
     const q = draft.trim();
-    if (!q) return;
-    const anchor = computeAnchor(node.body, text, node.body.indexOf(text));
+    if (!q || !selection) return; // a question must be anchored to a real selection
+    const anchor = computeAnchor(node.body, selection, node.body.indexOf(selection));
     setPending([...pending, { id: crypto.randomUUID(), anchor, question: q }]);
     setDraft("");
     setSelection("");
@@ -52,6 +51,8 @@ export function NodeDetail({
       await onChanged();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      // `pending` here is the same snapshot used to build `items`; inputs are disabled
+      // while `running`, so no concurrent mutation can race this update.
       setPending(pending.map((p) => ({ ...p, error: msg })));
     } finally {
       setRunning(false);
@@ -112,7 +113,7 @@ export function NodeDetail({
         style={{ width: "100%" }}
         disabled={running}
       />
-      <button onClick={addQuestion} disabled={running || !draft.trim()}>Add question</button>
+      <button onClick={addQuestion} disabled={running || !draft.trim() || !selection}>Add question</button>
 
       {pending.length > 0 && (
         <div className="pending" style={{ marginTop: 12 }}>
