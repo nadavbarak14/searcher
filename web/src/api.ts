@@ -17,5 +17,10 @@ export const api = {
     jsonFetch<{ node: ResearchNode }>(`/api/projects/${id}/nodes/${nodeId}`).then((r) => r.node),
   branch: (id: string, parentId: string, anchor: Anchor, question: string) =>
     post<ResearchNode>(`/api/projects/${id}/branch`, { parentId, anchor, question }),
+  branchBatch: (id: string, items: { parentId: string; anchor: Anchor; question: string }[]) =>
+    post<{ created: ResearchNode[]; failures: { index: number; error: string }[] }>(
+      `/api/projects/${id}/branch-batch`,
+      { items },
+    ),
   synthesize: (id: string) => post<{ markdown: string }>(`/api/projects/${id}/synthesize`, {}).then((r) => r.markdown),
 };
