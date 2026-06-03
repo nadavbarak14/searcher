@@ -67,3 +67,45 @@ describe("ResearchService.synthesize", () => {
     expect(report).toContain("# Report");
   });
 });
+
+describe("ResearchService.batchBranch", () => {
+  async function seedProject() {
+    const rootRun: RunFn = async () => ({ answer: "", claims: [], sources: [], costUsd: 0, sessionId: "s", meta: { findings: [{ question: "Q1", body: "B1 about spoofing and forging", sources: [] }] } });
+    const { projectId } = await svcWith(rootRun).createTopic("AI security");
+    return projectId;
+  }
+
+  it("runs all questions in parallel and creates one sibling finding each, in input order", async () => {
+    const projectId = await seedProject();
+    const run: RunFn = async ({ prompt }) => ({ answer: `answer for ${prompt.includes("forge") ? "forge" : "spoof"}`, claims: [], sources: ["https://x"], costUsd: 0, sessionId: "s", meta: null });
+    const svc = new ResearchService(baseDir, run);
+    const out = await svc.batchBranch(projectId, [
+      { parentId: "n_1", anchor: { text: "spoofing", offset: 0, occurrence: 1 }, question: "why spoof?" },
+      { parentId: "n_1", anchor: { text: "forging", offset: 0, occurrence: 1 }, question: "why forge?" },
+    ]);
+    expect(out.failures).toEqual([]);
+    expect(out.created).toHaveLength(2);
+    expect(out.created.every((n) => n.parents.includes("n_1"))).toBe(true);
+    const ids = out.created.map((n) => n.id);
+    expect(new Set(ids).size).toBe(2); // unique ids — no index race
+  });
+
+  it("isolates failures: successes persist, the failed item is reported by index", async () => {
+    const projectId = await seedProject();
+    const run: RunFn = async ({ prompt }) => {
+      if (prompt.includes("BOOM")) throw new Error("model failed");
+      return { answer: "ok", claims: [], sources: [], costUsd: 0, sessionId: "s", meta: null };
+    };
+    const svc = new ResearchService(baseDir, run);
+    const out = await svc.batchBranch(projectId, [
+      { parentId: "n_1", anchor: { text: "spoofing", offset: 0, occurrence: 1 }, question: "fine one" },
+      { parentId: "n_1", anchor: { text: "spoofing", offset: 0, occurrence: 1 }, question: "BOOM please" },
+      { parentId: "n_1", anchor: { text: "forging", offset: 0, occurrence: 1 }, question: "another fine" },
+    ]);
+    expect(out.created).toHaveLength(2);
+    expect(out.failures).toEqual([{ index: 1, error: "model failed" }]);
+    const store = new GraphStore(baseDir, projectId);
+    const index = await store.load();
+    expect(index.nodes.filter((n) => n.kind === "finding")).toHaveLength(3); // 1 seeded + 2 new
+  });
+});

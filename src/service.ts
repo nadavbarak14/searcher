@@ -22,6 +22,16 @@ interface Finding {
   sources: string[];
 }
 
+export interface BatchItem {
+  parentId: string;
+  anchor: Anchor;
+  question: string;
+}
+export interface BatchOutcome {
+  created: ResearchNode[];
+  failures: { index: number; error: string }[];
+}
+
 function projectIdFromTopic(topic: string): string {
   const slug = topic.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
   return slug || "research";
@@ -81,6 +91,35 @@ export class ResearchService {
     const prompt = branchPrompt({ topic: index.topic, selection: input.anchor.text, question: input.question, ancestorTitles: [parent.question] });
     const res = await this.run({ cwd, prompt, systemPrompt: BRANCH_SYSTEM });
     return store.addFinding({ parents: [input.parentId], anchor: input.anchor, question: input.question, body: res.answer, sources: res.sources });
+  }
+
+  /**
+   * Run several questions about a node at once. The claude -p calls fan out in parallel;
+   * persistence is race-free because all items share ONE GraphStore, whose internal write
+   * queue serializes index updates. Per-item failures are isolated (Promise.allSettled), so
+   * one bad question never drops the others.
+   */
+  async batchBranch(projectId: string, items: BatchItem[]): Promise<BatchOutcome> {
+    const store = new GraphStore(this.baseDir, projectId);
+    const index = await store.load();
+    const cwd = projectDir(this.baseDir, projectId);
+
+    const settled = await Promise.allSettled(
+      items.map(async (item) => {
+        const parent = await store.getNode(item.parentId);
+        const prompt = branchPrompt({ topic: index.topic, selection: item.anchor.text, question: item.question, ancestorTitles: [parent.question] });
+        const res = await this.run({ cwd, prompt, systemPrompt: BRANCH_SYSTEM });
+        return store.addFinding({ parents: [item.parentId], anchor: item.anchor, question: item.question, body: res.answer, sources: res.sources });
+      }),
+    );
+
+    const created: ResearchNode[] = [];
+    const failures: { index: number; error: string }[] = [];
+    settled.forEach((r, i) => {
+      if (r.status === "fulfilled") created.push(r.value);
+      else failures.push({ index: i, error: r.reason instanceof Error ? r.reason.message : String(r.reason) });
+    });
+    return { created, failures };
   }
 
   async synthesize(projectId: string): Promise<string> {
