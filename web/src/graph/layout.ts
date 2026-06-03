@@ -1,7 +1,7 @@
 import type { NodeMeta } from "../types";
 
-const ROW_H = 180;
-const COL_W = 260;
+const ROW_H = 380;
+const COL_W = 420;
 
 /**
  * Layered tree layout. The topic sits at row 0; a node's row is 1 + the shallowest

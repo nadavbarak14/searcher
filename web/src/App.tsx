@@ -23,6 +23,7 @@ export function App() {
   }, [projectId, reload]);
 
   const start = useCallback(async (topic: string) => {
+    setIndex(null);
     setView({ name: "loading", topic });
     try {
       const { projectId } = await api.createTopic(topic);
@@ -32,7 +33,10 @@ export function App() {
     }
   }, []);
 
-  const open = useCallback((id: string) => setView({ name: "canvas", projectId: id }), []);
+  const open = useCallback((id: string) => {
+    setIndex(null); // avoid a flash of the previous project's graph before reload
+    setView({ name: "canvas", projectId: id });
+  }, []);
   const home = useCallback(() => {
     setView({ name: "home" });
     setIndex(null);
@@ -71,7 +75,9 @@ export function App() {
         </button>
       </div>
       <div className="main" style={{ height: "calc(100vh - 48px)" }}>
-        {index && projectId && <Canvas projectId={projectId} index={index} onReloadIndex={() => reload(projectId)} />}
+        {index && projectId && (
+          <Canvas key={projectId} projectId={projectId} index={index} onReloadIndex={() => reload(projectId)} />
+        )}
       </div>
       {report !== null && (
         <div

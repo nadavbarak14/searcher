@@ -15,8 +15,8 @@ export const api = {
   getProject: (id: string) => jsonFetch<{ index: GraphIndex }>(`/api/projects/${id}`).then((r) => r.index),
   getNode: (id: string, nodeId: string) =>
     jsonFetch<{ node: ResearchNode }>(`/api/projects/${id}/nodes/${nodeId}`).then((r) => r.node),
-  branch: (id: string, parentId: string, question: string) =>
-    send<ResearchNode>("POST", `/api/projects/${id}/branch`, { parentId, question }),
+  branch: (id: string, parentId: string, question: string, anchor?: { text: string; offset: number; occurrence: number }) =>
+    send<ResearchNode>("POST", `/api/projects/${id}/branch`, anchor ? { parentId, question, anchor } : { parentId, question }),
   setPositions: (id: string, positions: { id: string; x: number; y: number }[]) =>
     send<{ ok: true }>("PATCH", `/api/projects/${id}/positions`, { positions }),
   synthesize: (id: string) => send<{ markdown: string }>("POST", `/api/projects/${id}/synthesize`, {}).then((r) => r.markdown),
