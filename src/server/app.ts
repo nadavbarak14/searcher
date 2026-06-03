@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyStatic from "@fastify/static";
 import fs from "node:fs/promises";
-import type { ResearchService } from "../service.js";
+import type { ResearchService, BatchItem } from "../service.js";
 import { GraphStore } from "../graph/store.js";
 
 export interface AppDeps {
@@ -48,7 +48,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   app.post<{
     Params: { id: string };
-    Body: { items?: { parentId?: string; anchor?: { text: string; offset: number; occurrence: number }; question?: string }[] };
+    Body: { items?: Partial<BatchItem>[] };
   }>("/api/projects/:id/branch-batch", async (req, reply) => {
     const items = req.body?.items;
     if (!Array.isArray(items) || items.length === 0) {
@@ -56,10 +56,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     }
     for (const it of items) {
       if (!it?.parentId || !it.anchor || !it.question) {
-        return reply.code(400).send({ error: "each item needs parentId, anchor and question" });
+        return reply.code(400).send({ error: "each item: parentId, anchor and question are required" });
       }
     }
-    return deps.service.batchBranch(req.params.id, items as { parentId: string; anchor: { text: string; offset: number; occurrence: number }; question: string }[]);
+    const valid: BatchItem[] = items.map((it) => ({ parentId: it.parentId!, anchor: it.anchor!, question: it.question! }));
+    return deps.service.batchBranch(req.params.id, valid);
   });
 
   app.post<{ Params: { id: string } }>("/api/projects/:id/synthesize", async (req) => {
