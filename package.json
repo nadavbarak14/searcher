@@ -20,8 +20,7 @@
     "gray-matter": "^4.0.3",
     "open": "^11.0.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "react-markdown": "^10.1.0"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
