@@ -50,4 +50,19 @@ describe("GraphStore.addFinding", () => {
     expect(reread.anchor).toEqual({ text: "adversarial", offset: 5, occurrence: 1 });
     expect(reread.sources).toEqual(["https://x.test"]);
   });
+
+  it("records the finding's anchor in the index meta", async () => {
+    const store = new GraphStore(baseDir, "p-anchor");
+    await store.createProject("Topic");
+    await store.addFinding({
+      parents: ["topic"],
+      anchor: { text: "spoofing", offset: 12, occurrence: 1 },
+      question: "why?",
+      body: "Because UDP.",
+      sources: [],
+    });
+    const index = await store.load();
+    const child = index.nodes.find((n) => n.id === "n_1");
+    expect(child?.anchor).toEqual({ text: "spoofing", offset: 12, occurrence: 1 });
+  });
 });

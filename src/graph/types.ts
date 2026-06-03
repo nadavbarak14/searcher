@@ -24,6 +24,7 @@ export interface NodeMeta {
   id: string;
   kind: NodeKind;
   parents: string[];
+  anchor?: Anchor; // present on findings that branch from a selection; mirrors the node's anchor
   question: string;
   created: string;
 }

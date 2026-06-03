@@ -4,7 +4,9 @@ import { nodeToMarkdown, markdownToNode } from "./serialize.js";
 import { projectDir, nodePath, indexPath } from "./paths.js";
 
 function metaOf(node: ResearchNode): NodeMeta {
-  return { id: node.id, kind: node.kind, parents: node.parents, question: node.question, created: node.created };
+  const meta: NodeMeta = { id: node.id, kind: node.kind, parents: node.parents, question: node.question, created: node.created };
+  if (node.anchor) meta.anchor = node.anchor;
+  return meta;
 }
 
 export class GraphStore {
