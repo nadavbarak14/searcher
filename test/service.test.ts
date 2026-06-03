@@ -86,6 +86,7 @@ describe("ResearchService.batchBranch", () => {
     expect(out.failures).toEqual([]);
     expect(out.created).toHaveLength(2);
     expect(out.created.every((n) => n.parents.includes("n_1"))).toBe(true);
+    expect(out.created.map((n) => n.question)).toEqual(["why spoof?", "why forge?"]); // input order preserved
     const ids = out.created.map((n) => n.id);
     expect(new Set(ids).size).toBe(2); // unique ids — no index race
   });

@@ -95,9 +95,14 @@ export class ResearchService {
 
   /**
    * Run several questions about a node at once. The claude -p calls fan out in parallel;
-   * persistence is race-free because all items share ONE GraphStore, whose internal write
-   * queue serializes index updates. Per-item failures are isolated (Promise.allSettled), so
-   * one bad question never drops the others.
+   * within this call persistence is race-free because all items share ONE GraphStore, whose
+   * internal write queue serializes index updates (the safety holds only for writes made
+   * through this instance — it does not guard against another GraphStore writing the same
+   * project concurrently). Per-item failures are isolated (Promise.allSettled), so one bad
+   * question never drops the others; `created` keeps input order, failures are reported by
+   * input index. Each `parentId` must already exist in the store — forward references to
+   * nodes created by this same batch are not supported and surface as per-item failures.
+   * An empty `items` array is a no-op returning `{ created: [], failures: [] }`.
    */
   async batchBranch(projectId: string, items: BatchItem[]): Promise<BatchOutcome> {
     const store = new GraphStore(this.baseDir, projectId);
