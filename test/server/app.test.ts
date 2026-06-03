@@ -22,6 +22,10 @@ function stubService(over: Partial<ResearchService> = {}): ResearchService {
   return {
     createTopic: async () => ({ projectId: "ai-security", findingCount: 3 }),
     branch: async () => ({ id: "n_1", kind: "finding", parents: ["topic"], question: "q", sources: [], created: "t", body: "b" }),
+    batchBranch: async () => ({
+      created: [{ id: "n_2", kind: "finding", parents: ["n_1"], question: "q", sources: [], created: "t", body: "b" }],
+      failures: [],
+    }),
     synthesize: async () => "# Report",
     ...over,
   } as unknown as ResearchService;
@@ -80,6 +84,30 @@ describe("buildApp routes", () => {
     const app = buildApp({ dataDir, service: stubService(), publicDir });
     const res = await app.inject({ method: "GET", url: "/api/nope" });
     expect(res.statusCode).toBe(404);
+    await app.close();
+  });
+  it("POST /branch-batch returns created + failures", async () => {
+    const app = buildApp({ dataDir, service: stubService(), publicDir });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/projects/p1/branch-batch",
+      payload: { items: [{ parentId: "n_1", anchor: { text: "x", offset: 0, occurrence: 1 }, question: "why?" }] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().created).toHaveLength(1);
+    expect(res.json().failures).toEqual([]);
+    await app.close();
+  });
+  it("POST /branch-batch 400s on empty items", async () => {
+    const app = buildApp({ dataDir, service: stubService(), publicDir });
+    const res = await app.inject({ method: "POST", url: "/api/projects/p1/branch-batch", payload: { items: [] } });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+  it("POST /branch-batch 400s when an item is missing a field", async () => {
+    const app = buildApp({ dataDir, service: stubService(), publicDir });
+    const res = await app.inject({ method: "POST", url: "/api/projects/p1/branch-batch", payload: { items: [{ parentId: "n_1", question: "why?" }] } });
+    expect(res.statusCode).toBe(400);
     await app.close();
   });
 });

@@ -46,6 +46,22 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return deps.service.branch(req.params.id, { parentId, anchor, question });
   });
 
+  app.post<{
+    Params: { id: string };
+    Body: { items?: { parentId?: string; anchor?: { text: string; offset: number; occurrence: number }; question?: string }[] };
+  }>("/api/projects/:id/branch-batch", async (req, reply) => {
+    const items = req.body?.items;
+    if (!Array.isArray(items) || items.length === 0) {
+      return reply.code(400).send({ error: "items must be a non-empty array" });
+    }
+    for (const it of items) {
+      if (!it?.parentId || !it.anchor || !it.question) {
+        return reply.code(400).send({ error: "each item needs parentId, anchor and question" });
+      }
+    }
+    return deps.service.batchBranch(req.params.id, items as { parentId: string; anchor: { text: string; offset: number; occurrence: number }; question: string }[]);
+  });
+
   app.post<{ Params: { id: string } }>("/api/projects/:id/synthesize", async (req) => {
     const markdown = await deps.service.synthesize(req.params.id);
     return { markdown };
