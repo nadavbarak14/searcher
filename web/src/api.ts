@@ -1,26 +1,23 @@
-import type { GraphIndex, ResearchNode, Anchor } from "./types";
+import type { GraphIndex, ResearchNode } from "./types";
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) throw new Error(`${init?.method ?? "GET"} ${url} failed: ${res.status}`);
   return (await res.json()) as T;
 }
-function post<T>(url: string, body: unknown): Promise<T> {
-  return jsonFetch<T>(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+function send<T>(method: string, url: string, body: unknown): Promise<T> {
+  return jsonFetch<T>(url, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 }
 
 export const api = {
   listProjects: () => jsonFetch<{ projects: string[] }>("/api/projects").then((r) => r.projects),
-  createTopic: (topic: string) => post<{ projectId: string; findingCount: number }>("/api/projects", { topic }),
+  createTopic: (topic: string) => send<{ projectId: string; findingCount: number }>("POST", "/api/projects", { topic }),
   getProject: (id: string) => jsonFetch<{ index: GraphIndex }>(`/api/projects/${id}`).then((r) => r.index),
   getNode: (id: string, nodeId: string) =>
     jsonFetch<{ node: ResearchNode }>(`/api/projects/${id}/nodes/${nodeId}`).then((r) => r.node),
-  branch: (id: string, parentId: string, anchor: Anchor, question: string) =>
-    post<ResearchNode>(`/api/projects/${id}/branch`, { parentId, anchor, question }),
-  branchBatch: (id: string, items: { parentId: string; anchor: Anchor; question: string }[]) =>
-    post<{ created: ResearchNode[]; failures: { index: number; error: string }[] }>(
-      `/api/projects/${id}/branch-batch`,
-      { items },
-    ),
-  synthesize: (id: string) => post<{ markdown: string }>(`/api/projects/${id}/synthesize`, {}).then((r) => r.markdown),
+  branch: (id: string, parentId: string, question: string) =>
+    send<ResearchNode>("POST", `/api/projects/${id}/branch`, { parentId, question }),
+  setPositions: (id: string, positions: { id: string; x: number; y: number }[]) =>
+    send<{ ok: true }>("PATCH", `/api/projects/${id}/positions`, { positions }),
+  synthesize: (id: string) => send<{ markdown: string }>("POST", `/api/projects/${id}/synthesize`, {}).then((r) => r.markdown),
 };

@@ -24,14 +24,22 @@ describe("api", () => {
     vi.stubGlobal("fetch", mockFetch({ error: "boom" }, false, 500));
     await expect(api.listProjects()).rejects.toThrow();
   });
-  it("branchBatch POSTs items and returns created + failures", async () => {
-    const f = mockFetch({ created: [{ id: "n_2" }], failures: [{ index: 1, error: "boom" }] });
+  it("branch POSTs parentId + question (no anchor)", async () => {
+    const f = mockFetch({ id: "n_2", kind: "finding", parents: ["n_1"], question: "why?", sources: [], created: "t", body: "b" });
     vi.stubGlobal("fetch", f);
-    const res = await api.branchBatch("p1", [
-      { parentId: "n_1", anchor: { text: "x", offset: 0, occurrence: 1 }, question: "why?" },
-    ]);
-    expect(res.created).toHaveLength(1);
-    expect(res.failures[0]).toEqual({ index: 1, error: "boom" });
-    expect(f).toHaveBeenCalledWith("/api/projects/p1/branch-batch", expect.objectContaining({ method: "POST" }));
+    await api.branch("p1", "n_1", "why?");
+    expect(f).toHaveBeenCalledWith(
+      "/api/projects/p1/branch",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ parentId: "n_1", question: "why?" }) }),
+    );
+  });
+  it("setPositions PATCHes the positions array", async () => {
+    const f = mockFetch({ ok: true });
+    vi.stubGlobal("fetch", f);
+    await api.setPositions("p1", [{ id: "n_1", x: 1, y: 2 }]);
+    expect(f).toHaveBeenCalledWith(
+      "/api/projects/p1/positions",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ positions: [{ id: "n_1", x: 1, y: 2 }] }) }),
+    );
   });
 });
