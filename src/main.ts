@@ -13,7 +13,7 @@ const execFileP = promisify(execFile);
 
 async function claudePresent(): Promise<boolean> {
   try {
-    await execFileP("claude", ["--version"], { shell: true });
+    await execFileP("claude", ["--version"], { shell: false });
     return true;
   } catch {
     return false;

@@ -29,7 +29,18 @@ export interface ClaudeResult {
 
 const defaultSpawn: SpawnFn = (args, opts) =>
   new Promise((resolve, reject) => {
-    const child = spawn("claude", args, { cwd: opts.cwd, env: opts.env, shell: true });
+    // shell:false is REQUIRED: under shell:true, Node concatenates args without
+    // escaping (DEP0190), so cmd.exe shreds the multi-line --append-system-prompt
+    // (newlines, <<<, {}, quotes) and Claude never receives the SEARCHER_META
+    // instruction → zero findings. `claude` is a native .exe here, so CreateProcess
+    // resolves it on PATH directly. stdin is detached so each call skips Claude's
+    // 3s "no stdin received" wait.
+    const child = spawn("claude", args, {
+      cwd: opts.cwd,
+      env: opts.env,
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = "";
     child.stdout.on("data", (d) => (stdout += d.toString()));
     child.on("error", reject);
@@ -60,9 +71,14 @@ export async function runClaude(input: RunInput, spawnFn: SpawnFn = defaultSpawn
     "--output-format", "json",
     "--permission-mode", "dontAsk",
     "--allowedTools", "Read", "Glob", "Grep", "WebSearch",
+    // Don't load the user's global MCP servers (chrome-devtools, posthog, etc.):
+    // the app uses only the built-in tools above, and loading MCP tool definitions
+    // roughly doubles the per-call cache-creation cost for zero benefit.
+    "--strict-mcp-config",
     "--append-system-prompt", input.systemPrompt,
   ];
-  if (input.model) args.push("--model", input.model);
+  // Default to Sonnet: ~3x leaner per cold call than Opus, ample for this research.
+  args.push("--model", input.model ?? "sonnet");
 
   const { stdout, code } = await spawnFn(args, { cwd: input.cwd, env: scrubbedEnv(input.env) });
 
