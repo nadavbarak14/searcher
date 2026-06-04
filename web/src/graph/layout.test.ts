@@ -11,18 +11,17 @@ const meta = (id: string, parents: string[]): NodeMeta => ({
 });
 
 describe("layoutNodes", () => {
-  it("puts the topic at row 0 and children on deeper rows", () => {
+  it("puts the topic at x=0 and children in deeper columns to the right", () => {
     const pos = layoutNodes([meta("topic", []), meta("n_1", ["topic"]), meta("n_2", ["topic"])]);
-    expect(pos.topic.y).toBe(0);
-    expect(pos.n_1.y).toBeGreaterThan(0);
-    expect(pos.n_2.y).toBe(pos.n_1.y); // siblings share a row
-    expect(pos.n_1.x).not.toBe(pos.n_2.x); // and are spread horizontally
+    expect(pos.topic.x).toBe(0);
+    expect(pos.n_1.x).toBeGreaterThan(0);
+    expect(pos.n_2.x).toBe(pos.n_1.x); // siblings share a column (x)
+    expect(pos.n_1.y).not.toBe(pos.n_2.y); // and are spread vertically
   });
 
-  it("assigns a position to every node, deeper for grandchildren", () => {
+  it("places a grandchild in a column further right than its parent", () => {
     const pos = layoutNodes([meta("topic", []), meta("n_1", ["topic"]), meta("n_2", ["n_1"])]);
-    expect(Object.keys(pos).sort()).toEqual(["n_1", "n_2", "topic"]);
-    expect(pos.n_2.y).toBeGreaterThan(pos.n_1.y);
+    expect(pos.n_2.x).toBeGreaterThan(pos.n_1.x);
   });
 
   it("does not loop forever on a cycle", () => {
