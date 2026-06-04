@@ -1,6 +1,20 @@
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { Handle, Position as RFPosition, type NodeProps } from "@xyflow/react";
 import { Icon } from "./ui";
+import type { Anchor } from "../types";
+import { anchorFromSelection } from "../graph/anchor";
+
+// char offset of a node/offset pair within container.textContent
+function offsetWithin(container: HTMLElement, node: Node, nodeOffset: number): number {
+  let total = 0;
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  let n: Node | null;
+  while ((n = walker.nextNode())) {
+    if (n === node) return total + nodeOffset;
+    total += (n.textContent ?? "").length;
+  }
+  return total;
+}
 
 export interface CardData {
   kind: "topic" | "finding";
@@ -15,6 +29,13 @@ export interface CardData {
   onAsk: (question: string) => void; // branch a follow-up question off this node
   onRetry?: () => void; // present on errored pending nodes
   onRemove?: () => void; // prune this node (absent on the topic/root)
+  id?: string;          // node id (used for updateNodeInternals in Phase 4)
+  draft?: boolean;
+  anchorText?: string;  // for a draft card: the quoted span it branches from
+  anchors?: Anchor[];   // child-anchors to highlight (Phase 3)
+  onFollowUp?: (anchor: Anchor) => void;
+  onDraftSubmit?: (question: string) => void; // draft: fire the branch
+  onDraftCancel?: () => void;                  // draft: discard
   [key: string]: unknown; // React Flow's NodeProps["data"] is an open record
 }
 
@@ -161,10 +182,61 @@ function CardToolbar({ show, copyText, onRemove }: { show: boolean; copyText?: s
   );
 }
 
+/* ---- draft compose card (selection-anchored follow-up) ---- */
+function DraftCard({ anchorText, onSubmit, onCancel }: { anchorText: string; onSubmit: (q: string) => void; onCancel: () => void }) {
+  const [draft, setDraft] = useState("");
+  const submit = () => { const q = draft.trim(); if (q) onSubmit(q); };
+  return (
+    <div style={{ position: "relative", width: 320, background: "var(--card)", borderRadius: "var(--r-lg)", border: "1px dashed var(--accent-line)", boxShadow: "var(--shadow-md)", padding: "16px 18px" }}>
+      <Handle type="target" position={RFPosition.Left} />
+      <div className="eyebrow" style={{ color: "var(--accent-deep)", marginBottom: 8 }}>↳ Follow up</div>
+      {anchorText && (
+        <blockquote className="serif nodrag" style={{ margin: "0 0 12px", paddingLeft: 10, borderLeft: "2px solid var(--accent-line)", fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.4 }}>
+          “{anchorText.length > 140 ? anchorText.slice(0, 139) + "…" : anchorText}”
+        </blockquote>
+      )}
+      <textarea autoFocus value={draft} rows={2} onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } if (e.key === "Escape") onCancel(); }}
+        placeholder="Ask about this selection — Claude answers here…" className="field nodrag"
+        style={{ fontSize: 13.5, resize: "none", lineHeight: 1.45 }} />
+      <div style={{ display: "flex", gap: 8, marginTop: 8, justifyContent: "flex-end" }}>
+        <button className="btn btn-ghost btn-sm nodrag" onClick={onCancel}>Cancel</button>
+        <button className="btn btn-primary btn-sm nodrag" disabled={!draft.trim()} onClick={submit}><Icon name="sparkle" size={14} /> Ask</button>
+      </div>
+      <Handle type="source" position={RFPosition.Right} />
+    </div>
+  );
+}
+
 function ResearchNodeCardImpl({ data }: NodeProps) {
   const d = data as CardData;
   const isTopic = d.kind === "topic";
   const [hover, setHover] = useState(false);
+
+  // ---- selection → follow-up (finding branch) ----
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [sel, setSel] = useState<{ anchor: Anchor; top: number; left: number } | null>(null);
+
+  const onBodyMouseUp = () => {
+    const s = window.getSelection();
+    const body = bodyRef.current;
+    if (!s || s.isCollapsed || !body) { setSel(null); return; }
+    const range = s.getRangeAt(0);
+    if (!body.contains(range.startContainer) || !body.contains(range.endContainer)) { setSel(null); return; }
+    const text = s.toString();
+    if (!text.trim()) { setSel(null); return; }
+    const start = offsetWithin(body, range.startContainer, range.startOffset);
+    const anchor = anchorFromSelection(body.textContent ?? "", text, start);
+    const r = range.getBoundingClientRect();
+    const cardRect = (cardRef.current ?? body).getBoundingClientRect();
+    setSel({ anchor, top: r.bottom - cardRect.top + 6, left: r.left - cardRect.left });
+  };
+
+  // ---- draft compose node ----
+  if (d.draft) {
+    return <DraftCard anchorText={d.anchorText ?? ""} onSubmit={d.onDraftSubmit!} onCancel={d.onDraftCancel!} />;
+  }
 
   // ---- pending (optimistic) node ----
   if (d.pending) {
@@ -244,6 +316,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
   const width = d.expanded ? 384 : 268;
   return (
     <div
+      ref={cardRef}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
@@ -302,6 +375,8 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
       {d.expanded && (
         <div style={{ padding: "16px 18px 18px" }}>
           <div
+            ref={bodyRef}
+            onMouseUp={onBodyMouseUp}
             className="nodrag serif"
             style={{ fontSize: 15, lineHeight: 1.62, color: "var(--ink-soft)", maxHeight: 260, overflow: "auto", whiteSpace: "pre-wrap" }}
           >
@@ -310,6 +385,14 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
           <SourceList sources={d.sources} />
           <AskBox onAsk={d.onAsk} />
         </div>
+      )}
+
+      {sel && d.onFollowUp && (
+        <button className="btn btn-primary btn-sm nodrag" style={{ position: "absolute", top: sel.top, left: sel.left, zIndex: 5, boxShadow: "var(--shadow-md)" }}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => { d.onFollowUp!(sel.anchor); window.getSelection()?.removeAllRanges(); setSel(null); }}>
+          <Icon name="branch" size={13} /> Follow up
+        </button>
       )}
 
       <Handle type="source" position={RFPosition.Right} />
