@@ -1,8 +1,8 @@
-import { memo, useRef, useState } from "react";
-import { Handle, Position as RFPosition, useStore, type NodeProps } from "@xyflow/react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
+import { Handle, Position as RFPosition, useStore, useUpdateNodeInternals, type NodeProps } from "@xyflow/react";
 import { Icon } from "./ui";
 import type { Anchor } from "../types";
-import { anchorFromSelection } from "../graph/anchor";
+import { anchorFromSelection, anchorKey } from "../graph/anchor";
 import { highlightSegments } from "../graph/highlight";
 
 // char offset of a node/offset pair within container.textContent
@@ -219,6 +219,24 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [sel, setSel] = useState<{ anchor: Anchor; top: number; left: number } | null>(null);
   const zoom = useStore((s) => s.transform[2]);
+  const markTops = useRef<Record<string, number>>({});
+  const updateNodeInternals = useUpdateNodeInternals();
+
+  // after render, measure each mark's top within the card and pin its handle
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (!card || !d.anchors?.length) return;
+    let moved = false;
+    for (const a of d.anchors) {
+      const key = anchorKey(a);
+      const mark = card.querySelector<HTMLElement>(`mark[data-akey="${key}"]`);
+      if (!mark) continue;
+      const top = mark.getBoundingClientRect().top - card.getBoundingClientRect().top;
+      const clamped = Math.max(8, Math.min(top, card.offsetHeight - 8)); // clamp into the card
+      if (markTops.current[key] !== clamped) { markTops.current[key] = clamped; moved = true; }
+    }
+    if (moved && d.id) updateNodeInternals(d.id);
+  });
 
   const onBodyMouseUp = () => {
     const s = window.getSelection();
@@ -386,6 +404,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
           <div
             ref={bodyRef}
             onMouseUp={onBodyMouseUp}
+            onScroll={() => { if (d.id) updateNodeInternals(d.id); }}
             className="nodrag serif"
             style={{ fontSize: 15, lineHeight: 1.62, color: "var(--ink-soft)", maxHeight: 260, overflow: "auto", whiteSpace: "pre-wrap" }}
           >
@@ -406,7 +425,11 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
         </button>
       )}
 
-      <Handle type="source" position={RFPosition.Right} />
+      <Handle type="source" position={RFPosition.Right} />{/* default, for unanchored edges */}
+      {d.expanded && d.anchors?.map((a) => {
+        const key = anchorKey(a);
+        return <Handle key={key} id={key} type="source" position={RFPosition.Right} style={{ top: markTops.current[key] ?? "50%" }} />;
+      })}
     </div>
   );
 }
