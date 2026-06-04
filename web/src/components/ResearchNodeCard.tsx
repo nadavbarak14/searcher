@@ -192,7 +192,7 @@ function DraftCard({ anchorText, onSubmit, onCancel }: { anchorText: string; onS
       <div className="eyebrow" style={{ color: "var(--accent-deep)", marginBottom: 8 }}>↳ Follow up</div>
       {anchorText && (
         <blockquote className="serif nodrag" style={{ margin: "0 0 12px", paddingLeft: 10, borderLeft: "2px solid var(--accent-line)", fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.4 }}>
-          “{anchorText.length > 140 ? anchorText.slice(0, 139) + "…" : anchorText}”
+          “{anchorText.length > 140 ? anchorText.slice(0, 140) + "…" : anchorText}”
         </blockquote>
       )}
       <textarea autoFocus value={draft} rows={2} onChange={(e) => setDraft(e.target.value)}
@@ -337,7 +337,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
 
       {/* header — click toggles expand; whole node is the drag handle */}
       <div
-        onClick={d.onToggle}
+        onClick={() => { setSel(null); d.onToggle(); }}
         style={{
           display: "flex",
           gap: 11,
