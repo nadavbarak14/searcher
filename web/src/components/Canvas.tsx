@@ -15,8 +15,8 @@ import {
 import "@xyflow/react/dist/style.css";
 import type { GraphIndex, Position } from "../types";
 import { api } from "../api";
-import { buildCanvas, type PendingNode } from "../graph/model";
-import { layoutNodes } from "../graph/layout";
+import { buildCanvas, type PendingNode, type DraftNode } from "../graph/model";
+import { layoutNodes, COL_W } from "../graph/layout";
 import { ResearchNodeCard, type CardData } from "./ResearchNodeCard";
 import { Icon, Wordmark } from "./ui";
 
@@ -175,12 +175,12 @@ function Flow({
   }, []);
 
   const ask = useCallback(
-    async (parentId: string, question: string) => {
+    async (parentId: string, question: string, anchor?: import("../types").Anchor) => {
       const pid = `pending_${pendSeq.current++}`;
-      setPending((p) => [...p, { id: pid, parentId, question }]);
+      setPending((p) => [...p, anchor ? { id: pid, parentId, question, anchor } : { id: pid, parentId, question }]);
       setExpanded((prev) => new Set(prev).add(parentId)); // keep parent open so the spinner shows
       try {
-        const created = await api.branch(projectId, parentId, question);
+        const created = await api.branch(projectId, parentId, question, anchor);
         setDetails((b) => ({ ...b, [created.id]: { body: created.body, sources: created.sources } })); // prime from response
         setPending((p) => p.filter((x) => x.id !== pid));
         await onReloadIndex();
@@ -193,12 +193,38 @@ function Flow({
     [projectId, onReloadIndex],
   );
 
+  const [drafts, setDrafts] = useState<DraftNode[]>([]);
+  const draftSeq = useRef(0);
+
+  const startFollowUp = useCallback((parentId: string, anchor: import("../types").Anchor) => {
+    const id = `draft_${draftSeq.current++}`;
+    setDrafts((d) => [...d, { id, parentId, anchor }]);
+    setExpanded((prev) => new Set(prev).add(parentId));
+  }, []);
+
+  const cancelDraft = useCallback((id: string) => setDrafts((d) => d.filter((x) => x.id !== id)), []);
+
+  const submitDraft = useCallback((draft: DraftNode, question: string) => {
+    setDrafts((d) => d.filter((x) => x.id !== draft.id));
+    void ask(draft.parentId, question, draft.anchor);
+  }, [ask]);
+
   const positions = useMemo(() => ({ ...savedPositions, ...drag }), [savedPositions, drag]);
-  const model = useMemo(
-    () => buildCanvas({ metas: index.nodes, expanded, bodies, sources, pruned, pending, positions }),
-    [index, expanded, bodies, sources, pruned, pending, positions],
-  );
   const layout = useMemo(() => layoutNodes(index.nodes), [index]);
+
+  const draftPositions = useMemo<Record<string, Position>>(() => {
+    const out: Record<string, Position> = {};
+    for (const dr of drafts) {
+      const base = positions[dr.parentId] ?? layout[dr.parentId] ?? { x: 0, y: 0 };
+      out[dr.id] = { x: base.x + COL_W, y: base.y };
+    }
+    return out;
+  }, [drafts, positions, layout]);
+
+  const model = useMemo(
+    () => buildCanvas({ metas: index.nodes, expanded, bodies, sources, pruned, pending, drafts, positions: { ...positions, ...draftPositions } }),
+    [index, expanded, bodies, sources, pruned, pending, drafts, positions, draftPositions],
+  );
 
   // expand-all / collapse-all over the not-pruned findings
   const findings = useMemo(() => index.nodes.filter((m) => m.kind !== "topic" && !pruned.has(m.id)), [index, pruned]);
@@ -224,6 +250,15 @@ function Flow({
     if (n.childCount !== undefined) data.childCount = n.childCount;
     if (n.error !== undefined) data.error = n.error;
     if (n.kind !== "topic") data.onRemove = () => removeNode(n.id);
+    data.id = n.id;
+    if (n.kind !== "topic") data.onFollowUp = (anchor) => startFollowUp(n.id, anchor);
+    if (n.draft) {
+      data.draft = true;
+      data.anchorText = n.anchor?.text ?? "";
+      const dr = drafts.find((x) => x.id === n.id)!;
+      data.onDraftSubmit = (q: string) => submitDraft(dr, q);
+      data.onDraftCancel = () => cancelDraft(n.id);
+    }
     if (n.pending && n.parentId) {
       const parentId = n.parentId;
       const question = n.title;
