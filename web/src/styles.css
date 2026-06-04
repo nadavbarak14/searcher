@@ -1,12 +1,236 @@
+/* ============================================================
+   Searcher — calm editorial design system
+   (ported from the Searcher Redesign design handoff)
+   ============================================================ */
+
+:root {
+  /* paper neutrals (warm) */
+  --paper:       oklch(0.985 0.005 80);
+  --paper-2:     oklch(0.963 0.006 78);   /* recessed: canvas bg */
+  --card:        oklch(0.999 0.0015 80);
+  --card-2:      oklch(0.978 0.005 80);
+
+  /* ink */
+  --ink:         oklch(0.255 0.012 60);
+  --ink-soft:    oklch(0.44 0.012 62);
+  --muted:       oklch(0.605 0.010 65);
+  --faint:       oklch(0.72 0.008 70);
+
+  /* hairlines */
+  --line:        oklch(0.905 0.006 75);
+  --line-strong: oklch(0.835 0.008 72);
+
+  /* accent — quiet ink blue */
+  --accent:      oklch(0.505 0.085 256);
+  --accent-deep: oklch(0.42 0.085 256);
+  --accent-soft: oklch(0.955 0.018 256);
+  --accent-line: oklch(0.86 0.04 256);
+
+  /* clay — reserved for the root / topic node + warm signals */
+  --clay:        oklch(0.555 0.088 46);
+  --clay-soft:   oklch(0.955 0.022 56);
+  --clay-line:   oklch(0.86 0.045 56);
+
+  /* status */
+  --danger:      oklch(0.52 0.13 28);
+  --danger-soft: oklch(0.955 0.025 32);
+
+  /* type */
+  --serif: "Newsreader", Georgia, "Times New Roman", serif;
+  --sans:  "Hanken Grotesk", system-ui, -apple-system, sans-serif;
+  --mono:  "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* shadows */
+  --shadow-sm: 0 1px 2px oklch(0.4 0.02 60 / 0.05), 0 1px 3px oklch(0.4 0.02 60 / 0.04);
+  --shadow-md: 0 2px 6px oklch(0.4 0.02 60 / 0.06), 0 8px 24px oklch(0.4 0.02 60 / 0.07);
+  --shadow-lg: 0 4px 12px oklch(0.4 0.02 60 / 0.08), 0 24px 60px oklch(0.4 0.02 60 / 0.12);
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+}
+
 * { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, sans-serif; color: #1a1a1a; }
-.app { display: flex; flex-direction: column; height: 100vh; }
-.topbar { padding: 10px 16px; border-bottom: 1px solid #e2e2e2; display: flex; gap: 12px; align-items: center; }
-.main { flex: 1; display: flex; min-height: 0; }
+
+html, body, #root {
+  margin: 0;
+  height: 100%;
+}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection { background: var(--accent-soft); }
+
+/* ---- shared primitives ---- */
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.mono { font-family: var(--mono); }
+.serif { font-family: var(--serif); }
+
+button { font-family: inherit; cursor: pointer; }
+
+/* buttons */
+.btn {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-strong);
+  background: var(--card);
+  color: var(--ink);
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, transform .05s ease;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--card-2); border-color: var(--muted); }
+.btn:active { transform: translateY(0.5px); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: oklch(0.99 0.005 256);
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+
+.btn-ghost {
+  border-color: transparent;
+  background: transparent;
+}
+.btn-ghost:hover { background: var(--card-2); border-color: var(--line); }
+
+.btn-sm { padding: 7px 11px; font-size: 13px; border-radius: var(--r-sm); }
+
+.btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+/* inputs */
+.field {
+  font-family: var(--sans);
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  width: 100%;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.field::placeholder { color: var(--faint); }
+.field:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* scrollbars (calm, thin) */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 99px; border: 3px solid transparent; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: padding-box; border: 3px solid transparent; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+.ctl {
+  width: 34px; height: 32px; display: grid; place-items: center;
+  border: none; background: var(--card); color: var(--ink-soft); cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.ctl:hover { background: var(--card-2); color: var(--ink); }
+
+/* keyboard hint */
+.kbd {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  background: var(--card-2); border: 1px solid var(--line);
+  border-bottom-width: 2px; border-radius: 5px; padding: 2px 6px; line-height: 1;
+}
+
+/* example topic chips */
+.chip {
+  font-family: var(--sans); font-size: 13px; color: var(--ink-soft);
+  background: var(--card); border: 1px solid var(--line-strong);
+  border-radius: 999px; padding: 7px 13px; cursor: pointer; line-height: 1.2;
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  transition: background .14s ease, border-color .14s ease, color .14s ease, transform .05s ease;
+}
+.chip:hover { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-deep); }
+.chip:active { transform: translateY(0.5px); }
+
+/* zoom readout */
+.zoom-pct {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  text-align: center; padding: 5px 0; cursor: pointer; user-select: none; border: none;
+  background: var(--card); width: 100%;
+  transition: color .12s ease, background .12s ease;
+}
+.zoom-pct:hover { color: var(--ink); background: var(--card-2); }
+
+/* compact icon-only button (card hover toolbar) */
+.iconbtn {
+  width: 28px; height: 28px; display: grid; place-items: center;
+  border: 1px solid var(--line); background: var(--card); color: var(--muted);
+  border-radius: 7px; cursor: pointer; padding: 0;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.iconbtn:hover { background: var(--card-2); color: var(--ink); border-color: var(--line-strong); }
+.iconbtn.bare { width: 26px; height: 26px; border-color: transparent; background: transparent; border-radius: 6px; }
+.iconbtn.danger:hover { color: var(--danger); border-color: oklch(0.82 0.08 30); background: var(--danger-soft); }
+.iconbtn.bare.danger:hover { border-color: transparent; }
+.iconbtn.accent:hover { color: var(--accent-deep); border-color: var(--accent-line); background: var(--accent-soft); }
+.iconbtn.bare.accent:hover { border-color: transparent; }
+
+/* segmented toggle (expand / collapse all) */
+.seg {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--sans); font-size: 13px; font-weight: 500; color: var(--ink-soft);
+  background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r-md);
+  padding: 8px 12px; cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.seg:hover { background: var(--card-2); border-color: var(--muted); color: var(--ink); }
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes breathe { 0%,100% { opacity: 0.35; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1); } }
+@keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---- app shell ---- */
+.app { display: flex; flex-direction: column; height: 100%; }
 .canvas { flex: 1; min-width: 0; }
-.detail { width: 380px; border-left: 1px solid #e2e2e2; padding: 16px; overflow: auto; }
-.library { padding: 32px; max-width: 720px; margin: 0 auto; }
-.proj-list li { margin: 6px 0; cursor: pointer; color: #1558d6; }
-button { cursor: pointer; }
-.muted { color: #777; font-size: 13px; }
-.sources a { display: block; font-size: 12px; }
+
+/* ============================================================
+   React Flow overrides — make the library's chrome match the
+   calm editorial system. We keep React Flow for pan/zoom/fit,
+   bezier edges and dragging, but restyle everything visible.
+   ============================================================ */
+
+.react-flow { background: var(--paper-2); }
+
+/* edges: hairline beziers; the .pending class dashes them in clay */
+.react-flow__edge-path { stroke: var(--line-strong); stroke-width: 1.6; }
+.react-flow__edge.pending .react-flow__edge-path { stroke: var(--clay-line); stroke-dasharray: 5 5; }
+
+/* edge label — a calm mono pill */
+.react-flow__edge-textbg { fill: var(--paper-2); }
+.react-flow__edge-text {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 500; fill: var(--muted);
+}
+
+/* connection handles are an implementation detail — keep them invisible */
+.react-flow__handle {
+  width: 1px; height: 1px; min-width: 0; min-height: 0;
+  background: transparent; border: none; opacity: 0;
+}
+.react-flow__attribution { display: none; }

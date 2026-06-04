@@ -60,11 +60,16 @@ describe("buildApp routes", () => {
     expect(res.statusCode).toBe(404);
     await app.close();
   });
-  it("GET /api/projects lists project folders", async () => {
-    await fs.mkdir(path.join(dataDir, "proj-a"));
+  it("GET /api/projects returns a summary per project (topic, nodes, sources, depth)", async () => {
+    const store = new GraphStore(dataDir, "proj-a");
+    await store.createProject("AI security");
+    await store.addFinding({ parents: ["topic"], question: "Q?", body: "b", sources: ["https://x", "https://y"] });
+    await fs.mkdir(path.join(dataDir, "empty-dir")); // no index — must be skipped, not crash
     const app = buildApp({ dataDir, service: stubService(), publicDir });
     const res = await app.inject({ method: "GET", url: "/api/projects" });
-    expect(res.json().projects).toContain("proj-a");
+    const projects = res.json().projects as { id: string; topic: string; nodes: number; sources: number; depth: number }[];
+    expect(projects.map((p) => p.id)).toEqual(["proj-a"]);
+    expect(projects[0]).toMatchObject({ topic: "AI security", nodes: 2, sources: 2, depth: 1 });
     await app.close();
   });
   it("serves index.html at / and falls back to it for client routes", async () => {

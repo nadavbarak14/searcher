@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import type { ResearchNode, GraphIndex, NodeMeta } from "./types.js";
+import type { ResearchNode, GraphIndex, NodeMeta, ProjectSummary } from "./types.js";
 import { nodeToMarkdown, markdownToNode } from "./serialize.js";
 import { projectDir, nodePath, indexPath } from "./paths.js";
 
@@ -134,6 +134,48 @@ export class GraphStore {
     const index: GraphIndex = { topic, nextSeq: maxSeq + 1, nodes };
     await this.writeIndex(index);
     return index;
+  }
+
+  /**
+   * Build a one-line summary for the library screen: topic, node count, deepest level,
+   * distinct source count (read from each node's .md), and the index's last-modified time.
+   */
+  async summary(): Promise<ProjectSummary> {
+    const index = await this.load();
+
+    // depth: a node's level is 1 + its shallowest resolvable parent; topic = 0.
+    const byId = new Map(index.nodes.map((m) => [m.id, m]));
+    const cache = new Map<string, number>();
+    const depthOf = (id: string, seen: Set<string> = new Set()): number => {
+      if (id === "topic") return 0;
+      const cached = cache.get(id);
+      if (cached !== undefined) return cached;
+      if (seen.has(id)) return 1; // cycle guard
+      seen.add(id);
+      const parents = byId.get(id)?.parents.filter((p) => byId.has(p)) ?? [];
+      const d = parents.length ? 1 + Math.min(...parents.map((p) => depthOf(p, seen))) : 1;
+      cache.set(id, d);
+      return d;
+    };
+    const depth = index.nodes.reduce((max, m) => Math.max(max, depthOf(m.id)), 0);
+
+    // distinct sources across every node (sources live in the .md, not the index).
+    const sources = new Set<string>();
+    for (const m of index.nodes) {
+      try {
+        const node = await this.getNode(m.id);
+        for (const s of node.sources) sources.add(s);
+      } catch {
+        // a missing/corrupt node file shouldn't sink the whole summary
+      }
+    }
+
+    const updated = await fs
+      .stat(indexPath(this.baseDir, this.projectId))
+      .then((s) => s.mtime.toISOString())
+      .catch(() => new Date(0).toISOString());
+
+    return { id: this.projectId, topic: index.topic, nodes: index.nodes.length, sources: sources.size, depth, updated };
   }
 
   /** Load the index, rebuilding from .md files if it is missing or unreadable. */

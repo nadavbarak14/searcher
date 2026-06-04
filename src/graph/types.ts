@@ -43,3 +43,13 @@ export interface GraphIndex {
   nextSeq: number; // next finding id will be `n_<nextSeq>`
   nodes: NodeMeta[];
 }
+
+/** A one-line summary of a project, used to render the library/home screen. */
+export interface ProjectSummary {
+  id: string; // the project folder name
+  topic: string;
+  nodes: number; // total node count (incl. the topic)
+  sources: number; // count of distinct source URLs across all nodes
+  depth: number; // deepest level below the topic (topic = 0)
+  updated: string; // ISO 8601 — when the index was last written
+}

@@ -11,3 +11,11 @@ export interface NodeMeta {
 }
 export interface GraphIndex { topic: string; nextSeq: number; nodes: NodeMeta[] }
 export interface ResearchNode extends NodeMeta { sources: string[]; body: string }
+export interface ProjectSummary {
+  id: string;
+  topic: string;
+  nodes: number;
+  sources: number;
+  depth: number;
+  updated: string; // ISO 8601
+}

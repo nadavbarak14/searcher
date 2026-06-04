@@ -15,7 +15,18 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   app.get("/api/projects", async () => {
     const entries = await fs.readdir(deps.dataDir, { withFileTypes: true }).catch(() => []);
-    const projects = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    const dirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    const summaries = await Promise.all(
+      dirs.map((id) =>
+        new GraphStore(deps.dataDir, id).summary().then(
+          (s) => s,
+          () => null, // skip a project that can't be summarised (e.g. no index yet)
+        ),
+      ),
+    );
+    const projects = summaries
+      .filter((s): s is NonNullable<typeof s> => s !== null && s.nodes > 0) // skip empty/non-project folders
+      .sort((a, b) => b.updated.localeCompare(a.updated)); // most-recently-updated first
     return { projects };
   });
 

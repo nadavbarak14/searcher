@@ -1,4 +1,4 @@
-import type { GraphIndex, ResearchNode } from "./types";
+import type { GraphIndex, ResearchNode, ProjectSummary } from "./types";
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -10,7 +10,7 @@ function send<T>(method: string, url: string, body: unknown): Promise<T> {
 }
 
 export const api = {
-  listProjects: () => jsonFetch<{ projects: string[] }>("/api/projects").then((r) => r.projects),
+  listProjects: () => jsonFetch<{ projects: ProjectSummary[] }>("/api/projects").then((r) => r.projects),
   createTopic: (topic: string) => send<{ projectId: string; findingCount: number }>("POST", "/api/projects", { topic }),
   getProject: (id: string) => jsonFetch<{ index: GraphIndex }>(`/api/projects/${id}`).then((r) => r.index),
   getNode: (id: string, nodeId: string) =>

@@ -3,9 +3,11 @@ import {
   ReactFlow,
   ReactFlowProvider,
   Background,
-  Controls,
+  BackgroundVariant,
+  Panel,
   useReactFlow,
   useNodesInitialized,
+  useViewport,
   type Node,
   type Edge,
   type NodeChange,
@@ -16,6 +18,7 @@ import { api } from "../api";
 import { buildCanvas, type PendingNode } from "../graph/model";
 import { layoutNodes } from "../graph/layout";
 import { ResearchNodeCard, type CardData } from "./ResearchNodeCard";
+import { Icon, Wordmark } from "./ui";
 
 const nodeTypes = { research: ResearchNodeCard };
 
@@ -23,19 +26,104 @@ function directChildrenOfTopic(index: GraphIndex): string[] {
   return index.nodes.filter((m) => m.parents.includes("topic")).map((m) => m.id);
 }
 
+function Divider() {
+  return <div style={{ width: 1, height: 24, background: "var(--line)", flexShrink: 0 }} />;
+}
+
+function TopBar({
+  topic,
+  count,
+  allOpen,
+  busy,
+  onHome,
+  onToggleAll,
+  onSynthesize,
+}: {
+  topic: string;
+  count: number;
+  allOpen: boolean;
+  busy: boolean;
+  onHome: () => void;
+  onToggleAll: () => void;
+  onSynthesize: () => void;
+}) {
+  return (
+    <header
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        padding: "0 16px",
+        height: 60,
+        background: "var(--card)",
+        borderBottom: "1px solid var(--line)",
+        flexShrink: 0,
+        zIndex: 5,
+      }}
+    >
+      <button className="btn btn-ghost btn-sm" onClick={onHome}>
+        <Icon name="arrowLeft" size={16} /> Library
+      </button>
+      <Divider />
+      <Wordmark size={17} />
+      <Divider />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div className="serif" style={{ fontSize: 16, fontWeight: 500, color: "var(--ink)", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {topic}
+        </div>
+        <div className="mono" style={{ fontSize: 10.5, color: "var(--faint)", letterSpacing: "0.04em" }}>{count} NODES</div>
+      </div>
+      <button className="seg" onClick={onToggleAll} title={allOpen ? "Collapse every finding" : "Expand every finding"}>
+        <Icon name={allOpen ? "collapseAll" : "expandAll"} size={15} />
+        {allOpen ? "Collapse all" : "Expand all"}
+      </button>
+      <Divider />
+      <button className="btn btn-primary btn-sm" onClick={onSynthesize} disabled={busy}>
+        <Icon name="sparkle" size={15} /> {busy ? "Synthesizing…" : "Synthesize"}
+      </button>
+    </header>
+  );
+}
+
+function ZoomCluster({ onFit }: { onFit: () => void }) {
+  const { zoomIn, zoomOut, zoomTo } = useReactFlow();
+  const { zoom } = useViewport();
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", background: "var(--card)", border: "1px solid var(--line-strong)", borderRadius: "var(--r-md)", overflow: "hidden", boxShadow: "var(--shadow-sm)" }}>
+        <button className="ctl" onClick={() => zoomIn({ duration: 150 })} title="Zoom in"><Icon name="plus" size={16} /></button>
+        <div style={{ height: 1, background: "var(--line)" }} />
+        <button className="zoom-pct" onClick={() => zoomTo(1, { duration: 150 })} title="Reset to 100%">{Math.round(zoom * 100)}%</button>
+        <div style={{ height: 1, background: "var(--line)" }} />
+        <button className="ctl" onClick={() => zoomOut({ duration: 150 })} title="Zoom out"><Icon name="minus" size={16} /></button>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", background: "var(--card)", border: "1px solid var(--line-strong)", borderRadius: "var(--r-md)", overflow: "hidden", boxShadow: "var(--shadow-sm)" }}>
+        <button className="ctl" onClick={onFit} title="Fit graph to view"><Icon name="fit" size={16} /></button>
+      </div>
+    </div>
+  );
+}
+
 function Flow({
   projectId,
   index,
   onReloadIndex,
+  onHome,
+  onSynthesize,
+  busy,
 }: {
   projectId: string;
   index: GraphIndex;
   onReloadIndex: () => Promise<void>;
+  onHome: () => void;
+  onSynthesize: () => void;
+  busy: boolean;
 }) {
   // Auto-expand the topic and its initial findings so content is visible on arrival.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["topic", ...directChildrenOfTopic(index)]));
-  const [bodies, setBodies] = useState<Record<string, string>>({});
+  const [details, setDetails] = useState<Record<string, { body: string; sources: string[] }>>({});
   const [pending, setPending] = useState<PendingNode[]>([]);
+  const [pruned, setPruned] = useState<Set<string>>(() => new Set());
   const [drag, setDrag] = useState<Record<string, Position>>({});
   const pendSeq = useRef(0);
   const fetching = useRef<Set<string>>(new Set());
@@ -50,19 +138,22 @@ function Flow({
     return out;
   }, [index]);
 
-  // Lazily fetch the body of any expanded, non-topic node we don't have yet.
+  // Lazily fetch the body + sources of any expanded, non-topic node we don't have yet.
   useEffect(() => {
     for (const id of expanded) {
       const meta = index.nodes.find((m) => m.id === id);
       if (!meta || meta.kind === "topic") continue; // topic has no body
-      if (bodies[id] !== undefined || fetching.current.has(id)) continue;
+      if (details[id] !== undefined || fetching.current.has(id)) continue;
       fetching.current.add(id);
       void api
         .getNode(projectId, id)
-        .then((n) => setBodies((b) => ({ ...b, [id]: n.body })))
+        .then((n) => setDetails((b) => ({ ...b, [id]: { body: n.body, sources: n.sources } })))
         .finally(() => fetching.current.delete(id));
     }
-  }, [expanded, index, projectId, bodies]);
+  }, [expanded, index, projectId, details]);
+
+  const bodies = useMemo(() => Object.fromEntries(Object.entries(details).map(([id, d]) => [id, d.body])), [details]);
+  const sources = useMemo(() => Object.fromEntries(Object.entries(details).map(([id, d]) => [id, d.sources])), [details]);
 
   const toggle = useCallback((id: string) => {
     setExpanded((prev) => {
@@ -73,15 +164,24 @@ function Flow({
     });
   }, []);
 
+  const removeNode = useCallback((id: string) => {
+    setPruned((prev) => new Set(prev).add(id));
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    setPending((p) => p.filter((x) => x.id !== id));
+  }, []);
+
   const ask = useCallback(
-    async (parentId: string, question: string, selection?: string) => {
+    async (parentId: string, question: string) => {
       const pid = `pending_${pendSeq.current++}`;
       setPending((p) => [...p, { id: pid, parentId, question }]);
       setExpanded((prev) => new Set(prev).add(parentId)); // keep parent open so the spinner shows
       try {
-        const anchor = selection ? { text: selection, offset: 0, occurrence: 1 } : undefined;
-        const created = await api.branch(projectId, parentId, question, anchor);
-        setBodies((b) => ({ ...b, [created.id]: created.body })); // prime cache from the response
+        const created = await api.branch(projectId, parentId, question);
+        setDetails((b) => ({ ...b, [created.id]: { body: created.body, sources: created.sources } })); // prime from response
         setPending((p) => p.filter((x) => x.id !== pid));
         await onReloadIndex();
         setExpanded((prev) => new Set(prev).add(created.id)); // auto-expand the new answer
@@ -95,10 +195,20 @@ function Flow({
 
   const positions = useMemo(() => ({ ...savedPositions, ...drag }), [savedPositions, drag]);
   const model = useMemo(
-    () => buildCanvas({ metas: index.nodes, expanded, bodies, pending, positions }),
-    [index, expanded, bodies, pending, positions],
+    () => buildCanvas({ metas: index.nodes, expanded, bodies, sources, pruned, pending, positions }),
+    [index, expanded, bodies, sources, pruned, pending, positions],
   );
   const layout = useMemo(() => layoutNodes(index.nodes), [index]);
+
+  // expand-all / collapse-all over the not-pruned findings
+  const findings = useMemo(() => index.nodes.filter((m) => m.kind !== "topic" && !pruned.has(m.id)), [index, pruned]);
+  const allOpen = findings.length > 0 && findings.every((m) => expanded.has(m.id));
+  const toggleAll = useCallback(() => {
+    if (allOpen) setExpanded(new Set(["topic"]));
+    else setExpanded(new Set(index.nodes.map((m) => m.id)));
+  }, [allOpen, index]);
+
+  const titleById = useMemo(() => Object.fromEntries(model.nodes.map((n) => [n.id, n.title])), [model]);
 
   const rfNodes: Node[] = model.nodes.map((n) => {
     const data: CardData = {
@@ -107,10 +217,13 @@ function Flow({
       expanded: n.expanded,
       pending: n.pending,
       onToggle: () => toggle(n.id),
-      onAsk: (q: string, selection?: string) => void ask(n.id, q, selection),
+      onAsk: (q: string) => void ask(n.id, q),
     };
     if (n.body !== undefined) data.body = n.body;
+    if (n.sources !== undefined) data.sources = n.sources;
+    if (n.childCount !== undefined) data.childCount = n.childCount;
     if (n.error !== undefined) data.error = n.error;
+    if (n.kind !== "topic") data.onRemove = () => removeNode(n.id);
     if (n.pending && n.parentId) {
       const parentId = n.parentId;
       const question = n.title;
@@ -129,7 +242,11 @@ function Flow({
 
   const rfEdges: Edge[] = model.edges.map((e) => {
     const edge: Edge = { id: e.id, source: e.source, target: e.target };
-    if (e.label !== undefined) edge.label = e.label;
+    const isPending = e.target.startsWith("pending_");
+    if (isPending) edge.className = "pending";
+    // label child edges (not the topic's first-level fan-out) with the child's question
+    const label = e.label ?? (e.source !== "topic" ? titleById[e.target] : undefined);
+    if (label) edge.label = label.length > 26 ? label.slice(0, 25) + "…" : label;
     return edge;
   });
 
@@ -159,19 +276,44 @@ function Flow({
   );
 
   return (
-    <ReactFlow nodes={rfNodes} edges={rfEdges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} minZoom={0.1} fitView>
-      <Background />
-      <Controls />
-    </ReactFlow>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <TopBar
+        topic={index.topic}
+        count={rfNodes.length}
+        allOpen={allOpen}
+        busy={busy}
+        onHome={onHome}
+        onToggleAll={toggleAll}
+        onSynthesize={onSynthesize}
+      />
+      <div className="canvas" style={{ flex: 1, minHeight: 0 }}>
+        <ReactFlow nodes={rfNodes} edges={rfEdges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} minZoom={0.2} maxZoom={2} fitView proOptions={{ hideAttribution: true }}>
+          <Background variant={BackgroundVariant.Dots} gap={26} size={1.1} color="var(--line-strong)" />
+          <Panel position="bottom-left">
+            <ZoomCluster onFit={() => void fitView({ padding: 0.2, duration: 200 })} />
+          </Panel>
+          <Panel position="bottom-right">
+            <span className="mono" style={{ fontSize: 10.5, color: "var(--faint)", letterSpacing: "0.04em", pointerEvents: "none" }}>
+              DRAG TO PAN · SCROLL TO ZOOM · CLICK A CARD TO EXPAND
+            </span>
+          </Panel>
+        </ReactFlow>
+      </div>
+    </div>
   );
 }
 
-export function Canvas(props: { projectId: string; index: GraphIndex; onReloadIndex: () => Promise<void> }) {
+export function Canvas(props: {
+  projectId: string;
+  index: GraphIndex;
+  onReloadIndex: () => Promise<void>;
+  onHome: () => void;
+  onSynthesize: () => void;
+  busy: boolean;
+}) {
   return (
-    <div className="canvas" style={{ width: "100%", height: "100%" }}>
-      <ReactFlowProvider>
-        <Flow {...props} />
-      </ReactFlowProvider>
-    </div>
+    <ReactFlowProvider>
+      <Flow {...props} />
+    </ReactFlowProvider>
   );
 }

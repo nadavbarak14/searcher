@@ -49,4 +49,32 @@ describe("buildCanvas", () => {
     expect(n1.body).toBe("BODY");
     expect(n1.position).toEqual({ x: 9, y: 9 });
   });
+
+  it("carries sources when present and counts direct children on the topic", () => {
+    const out = buildCanvas({
+      metas,
+      expanded: new Set(["topic"]),
+      bodies: {},
+      sources: { n_1: ["https://a", "https://b"] },
+      pending: [],
+      positions: {},
+    });
+    expect(out.nodes.find((n) => n.id === "n_1")?.sources).toEqual(["https://a", "https://b"]);
+    expect(out.nodes.find((n) => n.id === "topic")?.childCount).toBe(1); // n_1 branches off topic
+  });
+
+  it("omits a pruned node, its subtree, and its contribution to the child count", () => {
+    const out = buildCanvas({
+      metas,
+      expanded: new Set(["topic", "n_1"]),
+      bodies: {},
+      pruned: new Set(["n_1"]),
+      pending: [],
+      positions: {},
+    });
+    const ids = out.nodes.map((n) => n.id);
+    expect(ids).not.toContain("n_1");
+    expect(ids).not.toContain("n_2"); // child of the pruned node is hidden too
+    expect(out.nodes.find((n) => n.id === "topic")?.childCount).toBe(0);
+  });
 });
