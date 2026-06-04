@@ -121,4 +121,16 @@ describe("buildCanvas", () => {
     });
     expect(nodes.find((n) => n.id === "n_1")!.anchors?.length).toBe(1);
   });
+
+  it("sets sourceHandle to the anchor key on an anchored child edge", () => {
+    const metas: NodeMeta[] = [
+      meta("topic", []),
+      { ...meta("n_1", ["topic"]), anchor: { text: "span", offset: 0, occurrence: 0 } },
+    ];
+    const { edges } = buildCanvas({
+      metas, expanded: new Set(["topic"]), bodies: {}, pending: [], positions: {}, drafts: [],
+    });
+    const e = edges.find((x) => x.target === "n_1")!;
+    expect(e.sourceHandle).toBe("a0_0");
+  });
 });

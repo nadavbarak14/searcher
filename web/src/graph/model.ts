@@ -20,7 +20,7 @@ export interface CanvasNode {
   error?: string;
   position?: Position;
 }
-export interface CanvasEdge { id: string; source: string; target: string; label?: string }
+export interface CanvasEdge { id: string; source: string; target: string; label?: string; sourceHandle?: string }
 
 /**
  * Derive the visible canvas from the index + UI state. Visibility: the topic is always
@@ -75,7 +75,10 @@ export function buildCanvas(input: {
     if (positions[m.id]) node.position = positions[m.id];
     nodes.push(node);
     for (const p of m.parents) {
-      if (visible.has(p)) edges.push({ id: `${p}->${m.id}`, source: p, target: m.id });
+      if (!visible.has(p)) continue;
+      const edge: CanvasEdge = { id: `${p}->${m.id}`, source: p, target: m.id };
+      if (m.anchor) edge.sourceHandle = anchorKey(m.anchor);
+      edges.push(edge);
     }
   }
 
@@ -86,7 +89,9 @@ export function buildCanvas(input: {
     if (pn.error) node.error = pn.error;
     if (pn.anchor) node.anchor = pn.anchor;
     nodes.push(node);
-    edges.push({ id: `${pn.parentId}->${pn.id}`, source: pn.parentId, target: pn.id, label: pn.question });
+    const pendingEdge: CanvasEdge = { id: `${pn.parentId}->${pn.id}`, source: pn.parentId, target: pn.id, label: pn.question };
+    if (pn.anchor) pendingEdge.sourceHandle = anchorKey(pn.anchor);
+    edges.push(pendingEdge);
   }
 
   for (const dr of drafts) {
@@ -97,7 +102,7 @@ export function buildCanvas(input: {
       draft: true, anchor: dr.anchor, parentId: dr.parentId,
     };
     nodes.push(node);
-    edges.push({ id: `${dr.parentId}->${dr.id}`, source: dr.parentId, target: dr.id });
+    edges.push({ id: `${dr.parentId}->${dr.id}`, source: dr.parentId, target: dr.id, sourceHandle: anchorKey(dr.anchor) });
   }
 
   // collect, per visible parent, the distinct anchors of its children (real + pending + draft)
