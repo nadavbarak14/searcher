@@ -234,3 +234,4 @@ button { font-family: inherit; cursor: pointer; }
   background: transparent; border: none; opacity: 0;
 }
 .react-flow__attribution { display: none; }
+.anchor-mark { background: var(--accent-soft); border-bottom: 1.5px solid var(--accent-line); border-radius: 2px; padding: 0 1px; color: inherit; }

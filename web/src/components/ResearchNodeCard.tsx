@@ -3,6 +3,7 @@ import { Handle, Position as RFPosition, useStore, type NodeProps } from "@xyflo
 import { Icon } from "./ui";
 import type { Anchor } from "../types";
 import { anchorFromSelection } from "../graph/anchor";
+import { highlightSegments } from "../graph/highlight";
 
 // char offset of a node/offset pair within container.textContent
 function offsetWithin(container: HTMLElement, node: Node, nodeOffset: number): number {
@@ -316,6 +317,12 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
 
   // ---- finding node (collapsed / expanded) ----
   const width = d.expanded ? 384 : 268;
+  const bodyContent = (d.body && d.anchors?.length)
+    ? highlightSegments(d.body, d.anchors).map((seg, i) =>
+        seg.keys.length
+          ? <mark key={i} data-akey={seg.keys[0]} className="anchor-mark">{seg.text}</mark>
+          : <span key={i}>{seg.text}</span>)
+    : d.body;
   return (
     <div
       ref={cardRef}
@@ -382,7 +389,9 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
             className="nodrag serif"
             style={{ fontSize: 15, lineHeight: 1.62, color: "var(--ink-soft)", maxHeight: 260, overflow: "auto", whiteSpace: "pre-wrap" }}
           >
-            {d.body === undefined ? <span className="mono" style={{ color: "var(--faint)" }}>Loading…</span> : d.body || <span className="mono" style={{ color: "var(--faint)" }}>(no text)</span>}
+            {d.body === undefined
+              ? <span className="mono" style={{ color: "var(--faint)" }}>Loading…</span>
+              : (d.body ? bodyContent : <span className="mono" style={{ color: "var(--faint)" }}>(no text)</span>)}
           </div>
           <SourceList sources={d.sources} />
           <AskBox onAsk={d.onAsk} />

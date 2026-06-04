@@ -251,6 +251,7 @@ function Flow({
       onAsk: (q: string) => void ask(n.id, q),
     };
     if (n.body !== undefined) data.body = n.body;
+    if (n.anchors) data.anchors = n.anchors;
     if (n.sources !== undefined) data.sources = n.sources;
     if (n.childCount !== undefined) data.childCount = n.childCount;
     if (n.error !== undefined) data.error = n.error;
