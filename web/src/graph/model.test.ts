@@ -99,4 +99,26 @@ describe("buildCanvas", () => {
     });
     expect(nodes.find((n) => n.id === "draft_0")).toBeUndefined();
   });
+
+  it("attaches a parent's child-anchors for highlighting", () => {
+    const metas: NodeMeta[] = [
+      meta("topic", []),
+      { ...meta("n_1", ["topic"]), anchor: { text: "span", offset: 0, occurrence: 0 } },
+    ];
+    const { nodes } = buildCanvas({
+      metas, expanded: new Set(["topic"]), bodies: { topic: "" }, pending: [], positions: {}, drafts: [],
+    });
+    const topic = nodes.find((n) => n.id === "topic")!;
+    expect(topic.anchors?.map((a) => a.text)).toEqual(["span"]);
+  });
+
+  it("dedupes child-anchors by key and includes draft anchors", () => {
+    const metas = [meta("topic", []), meta("n_1", ["topic"])];
+    const dup = { text: "span", offset: 0, occurrence: 0 };
+    const { nodes } = buildCanvas({
+      metas, expanded: new Set(["topic", "n_1"]), bodies: { n_1: "span here" }, pending: [], positions: {},
+      drafts: [{ id: "draft_0", parentId: "n_1", anchor: dup }, { id: "draft_1", parentId: "n_1", anchor: dup }],
+    });
+    expect(nodes.find((n) => n.id === "n_1")!.anchors?.length).toBe(1);
+  });
 });

@@ -1,4 +1,5 @@
 import type { NodeMeta, Position, Anchor } from "../types";
+import { anchorKey } from "./anchor";
 
 export interface PendingNode { id: string; parentId: string; question: string; error?: string; anchor?: Anchor }
 export interface DraftNode { id: string; parentId: string; anchor: Anchor }
@@ -11,6 +12,7 @@ export interface CanvasNode {
   pending: boolean;
   draft?: boolean;
   anchor?: Anchor;
+  anchors?: Anchor[]; // distinct anchors of this node's children (real + pending + draft), for span highlighting
   parentId?: string; // set on pending/draft nodes so the UI can recover the parent (e.g. for retry)
   body?: string;
   sources?: string[];
@@ -97,6 +99,22 @@ export function buildCanvas(input: {
     nodes.push(node);
     edges.push({ id: `${dr.parentId}->${dr.id}`, source: dr.parentId, target: dr.id });
   }
+
+  // collect, per visible parent, the distinct anchors of its children (real + pending + draft)
+  const anchorsByParent = new Map<string, Anchor[]>();
+  const seen = new Map<string, Set<string>>();
+  const addAnchor = (parentId: string, a?: Anchor) => {
+    if (!a) return;
+    const key = anchorKey(a);
+    const s = seen.get(parentId) ?? seen.set(parentId, new Set()).get(parentId)!;
+    if (s.has(key)) return;
+    s.add(key);
+    (anchorsByParent.get(parentId) ?? anchorsByParent.set(parentId, []).get(parentId)!).push(a);
+  };
+  for (const m of metas) if (visible.has(m.id)) for (const p of m.parents) if (visible.has(p)) addAnchor(p, m.anchor);
+  for (const pn of pending) if (visible.has(pn.parentId) && expanded.has(pn.parentId)) addAnchor(pn.parentId, pn.anchor);
+  for (const dr of drafts) if (visible.has(dr.parentId) && expanded.has(dr.parentId)) addAnchor(dr.parentId, dr.anchor);
+  for (const node of nodes) { const a = anchorsByParent.get(node.id); if (a) node.anchors = a; }
 
   return { nodes, edges };
 }
