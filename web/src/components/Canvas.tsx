@@ -13,10 +13,10 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { GraphIndex, Position } from "../types";
+import type { GraphIndex, Position, Anchor } from "../types";
 import { api } from "../api";
 import { buildCanvas, type PendingNode, type DraftNode } from "../graph/model";
-import { layoutNodes, COL_W } from "../graph/layout";
+import { layoutNodes, COL_W, ROW_H } from "../graph/layout";
 import { ResearchNodeCard, type CardData } from "./ResearchNodeCard";
 import { Icon, Wordmark } from "./ui";
 
@@ -175,7 +175,7 @@ function Flow({
   }, []);
 
   const ask = useCallback(
-    async (parentId: string, question: string, anchor?: import("../types").Anchor) => {
+    async (parentId: string, question: string, anchor?: Anchor) => {
       const pid = `pending_${pendSeq.current++}`;
       setPending((p) => [...p, anchor ? { id: pid, parentId, question, anchor } : { id: pid, parentId, question }]);
       setExpanded((prev) => new Set(prev).add(parentId)); // keep parent open so the spinner shows
@@ -196,7 +196,9 @@ function Flow({
   const [drafts, setDrafts] = useState<DraftNode[]>([]);
   const draftSeq = useRef(0);
 
-  const startFollowUp = useCallback((parentId: string, anchor: import("../types").Anchor) => {
+  useEffect(() => { setDrafts([]); draftSeq.current = 0; }, [projectId]);
+
+  const startFollowUp = useCallback((parentId: string, anchor: Anchor) => {
     const id = `draft_${draftSeq.current++}`;
     setDrafts((d) => [...d, { id, parentId, anchor }]);
     setExpanded((prev) => new Set(prev).add(parentId));
@@ -214,9 +216,12 @@ function Flow({
 
   const draftPositions = useMemo<Record<string, Position>>(() => {
     const out: Record<string, Position> = {};
+    const perParent: Record<string, number> = {};
     for (const dr of drafts) {
       const base = positions[dr.parentId] ?? layout[dr.parentId] ?? { x: 0, y: 0 };
-      out[dr.id] = { x: base.x + COL_W, y: base.y };
+      const i = perParent[dr.parentId] ?? 0;
+      perParent[dr.parentId] = i + 1;
+      out[dr.id] = { x: base.x + COL_W, y: base.y + i * ROW_H };
     }
     return out;
   }, [drafts, positions, layout]);
@@ -298,7 +303,7 @@ function Flow({
           const id = c.id;
           const pos = c.position;
           setDrag((dPrev) => ({ ...dPrev, [id]: pos }));
-          if (c.dragging === false && !id.startsWith("pending_")) {
+          if (c.dragging === false && !id.startsWith("pending_") && !id.startsWith("draft_")) {
             if (saveTimer.current) clearTimeout(saveTimer.current);
             saveTimer.current = setTimeout(() => {
               void api.setPositions(projectId, [{ id, x: pos.x, y: pos.y }]);
