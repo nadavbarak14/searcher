@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Handle, Position as RFPosition, useStore, useUpdateNodeInternals, type NodeProps } from "@xyflow/react";
 import { Icon } from "./ui";
 import type { Anchor } from "../types";
@@ -219,24 +219,30 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [sel, setSel] = useState<{ anchor: Anchor; top: number; left: number } | null>(null);
   const zoom = useStore((s) => s.transform[2]);
-  const markTops = useRef<Record<string, number>>({});
+  const [markTops, setMarkTops] = useState<Record<string, number>>({});
+  const [scrollTick, setScrollTick] = useState(0);
   const updateNodeInternals = useUpdateNodeInternals();
 
-  // after render, measure each mark's top within the card and pin its handle
+  // after render, measure each mark's top within the card; drive a re-render via state
   useLayoutEffect(() => {
     const card = cardRef.current;
     if (!card || !d.anchors?.length) return;
-    let moved = false;
+    const next: Record<string, number> = {};
     for (const a of d.anchors) {
       const key = anchorKey(a);
       const mark = card.querySelector<HTMLElement>(`mark[data-akey="${key}"]`);
       if (!mark) continue;
-      const top = mark.getBoundingClientRect().top - card.getBoundingClientRect().top;
-      const clamped = Math.max(8, Math.min(top, card.offsetHeight - 8)); // clamp into the card
-      if (markTops.current[key] !== clamped) { markTops.current[key] = clamped; moved = true; }
+      next[key] = Math.max(8, Math.min(mark.getBoundingClientRect().top - card.getBoundingClientRect().top, card.offsetHeight - 8));
     }
-    if (moved && d.id) updateNodeInternals(d.id);
-  });
+    const keys = Object.keys(next);
+    const changed = keys.length !== Object.keys(markTops).length || keys.some((k) => markTops[k] !== next[k]);
+    if (changed) setMarkTops(next);
+  }); // no dep array: runs after every render (incl. scrollTick bumps); self-limits via the `changed` guard
+
+  // tell React Flow to recompute edge geometry AFTER markTops is applied to the DOM
+  useEffect(() => {
+    if (d.id) updateNodeInternals(d.id);
+  }, [markTops, d.id, updateNodeInternals]);
 
   const onBodyMouseUp = () => {
     const s = window.getSelection();
@@ -404,7 +410,8 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
           <div
             ref={bodyRef}
             onMouseUp={onBodyMouseUp}
-            onScroll={() => { if (d.id) updateNodeInternals(d.id); }}
+            onScroll={() => setScrollTick((t) => t + 1)}
+            data-scroll={scrollTick}
             className="nodrag serif"
             style={{ fontSize: 15, lineHeight: 1.62, color: "var(--ink-soft)", maxHeight: 260, overflow: "auto", whiteSpace: "pre-wrap" }}
           >
@@ -428,7 +435,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
       <Handle type="source" position={RFPosition.Right} />{/* default, for unanchored edges */}
       {d.expanded && d.anchors?.map((a) => {
         const key = anchorKey(a);
-        return <Handle key={key} id={key} type="source" position={RFPosition.Right} style={{ top: markTops.current[key] ?? "50%" }} />;
+        return <Handle key={key} id={key} type="source" position={RFPosition.Right} style={{ top: markTops[key] ?? "50%" }} />;
       })}
     </div>
   );
