@@ -29,6 +29,6 @@ export function locateAnchor(body: string, a: Anchor): { start: number; end: num
     from = idx + 1;
   }
   if (idx !== -1) return { start: idx, end: idx + a.text.length };
-  if (body.substr(a.offset, a.text.length) === a.text) return { start: a.offset, end: a.offset + a.text.length };
+  if (body.slice(a.offset, a.offset + a.text.length) === a.text) return { start: a.offset, end: a.offset + a.text.length };
   return null;
 }

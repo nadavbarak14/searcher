@@ -25,6 +25,11 @@ describe("locateAnchor", () => {
   it("returns null when the text is absent", () => {
     expect(locateAnchor("nothing here", { text: "zzz", offset: 0, occurrence: 0 })).toBeNull();
   });
+  it("round-trips an anchor built from a selection", () => {
+    const body = "alpha beta alpha gamma";
+    const a = anchorFromSelection(body, "alpha", 11); // second occurrence
+    expect(locateAnchor(body, a)).toEqual({ start: 11, end: 16 });
+  });
 });
 
 describe("anchorKey", () => {
