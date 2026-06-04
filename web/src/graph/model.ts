@@ -1,6 +1,7 @@
-import type { NodeMeta, Position } from "../types";
+import type { NodeMeta, Position, Anchor } from "../types";
 
-export interface PendingNode { id: string; parentId: string; question: string; error?: string }
+export interface PendingNode { id: string; parentId: string; question: string; error?: string; anchor?: Anchor }
+export interface DraftNode { id: string; parentId: string; anchor: Anchor }
 
 export interface CanvasNode {
   id: string;
@@ -8,7 +9,9 @@ export interface CanvasNode {
   title: string;
   expanded: boolean;
   pending: boolean;
-  parentId?: string; // set on pending nodes so the UI can recover the parent (e.g. for retry)
+  draft?: boolean;
+  anchor?: Anchor;
+  parentId?: string; // set on pending/draft nodes so the UI can recover the parent (e.g. for retry)
   body?: string;
   sources?: string[];
   childCount?: number; // findings that branch directly off this node (used for the topic card meta)
@@ -31,10 +34,12 @@ export function buildCanvas(input: {
   pruned?: Set<string>;
   pending: PendingNode[];
   positions: Record<string, Position>;
+  drafts?: DraftNode[];
 }): { nodes: CanvasNode[]; edges: CanvasEdge[] } {
   const { metas, expanded, bodies, pending, positions } = input;
   const sources = input.sources ?? {};
   const pruned = input.pruned ?? new Set<string>();
+  const drafts = input.drafts ?? [];
 
   // direct-child counts, used for the topic card's "N FINDINGS" meta line
   const childCount = new Map<string, number>();
@@ -77,8 +82,20 @@ export function buildCanvas(input: {
     if (!(visible.has(pn.parentId) && expanded.has(pn.parentId))) continue;
     const node: CanvasNode = { id: pn.id, kind: "finding", title: pn.question, expanded: false, pending: true, parentId: pn.parentId };
     if (pn.error) node.error = pn.error;
+    if (pn.anchor) node.anchor = pn.anchor;
     nodes.push(node);
     edges.push({ id: `${pn.parentId}->${pn.id}`, source: pn.parentId, target: pn.id, label: pn.question });
+  }
+
+  for (const dr of drafts) {
+    if (pruned.has(dr.id)) continue;
+    if (!(visible.has(dr.parentId) && expanded.has(dr.parentId))) continue;
+    const node: CanvasNode = {
+      id: dr.id, kind: "finding", title: "", expanded: true, pending: false,
+      draft: true, anchor: dr.anchor, parentId: dr.parentId,
+    };
+    nodes.push(node);
+    edges.push({ id: `${dr.parentId}->${dr.id}`, source: dr.parentId, target: dr.id });
   }
 
   return { nodes, edges };

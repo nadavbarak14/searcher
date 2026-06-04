@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildCanvas, type PendingNode } from "./model";
+import { buildCanvas, type PendingNode, type DraftNode } from "./model";
 import type { NodeMeta } from "../types";
 
 const meta = (id: string, parents: string[]): NodeMeta => ({
@@ -76,5 +76,27 @@ describe("buildCanvas", () => {
     expect(ids).not.toContain("n_1");
     expect(ids).not.toContain("n_2"); // child of the pruned node is hidden too
     expect(out.nodes.find((n) => n.id === "topic")?.childCount).toBe(0);
+  });
+
+  it("renders a draft child node and edge under its expanded parent", () => {
+    const metas = [meta("topic", []), meta("n_1", ["topic"])];
+    const { nodes, edges } = buildCanvas({
+      metas, expanded: new Set(["topic", "n_1"]), bodies: { n_1: "body" },
+      pending: [], positions: {},
+      drafts: [{ id: "draft_0", parentId: "n_1", anchor: { text: "body", offset: 0, occurrence: 0 } }],
+    });
+    const draft = nodes.find((n) => n.id === "draft_0");
+    expect(draft?.draft).toBe(true);
+    expect(draft?.anchor?.text).toBe("body");
+    expect(edges.some((e) => e.source === "n_1" && e.target === "draft_0")).toBe(true);
+  });
+
+  it("hides a draft whose parent is collapsed", () => {
+    const metas = [meta("topic", []), meta("n_1", ["topic"])];
+    const { nodes } = buildCanvas({
+      metas, expanded: new Set(["topic"]), bodies: {}, pending: [], positions: {},
+      drafts: [{ id: "draft_0", parentId: "n_1", anchor: { text: "x", offset: 0, occurrence: 0 } }],
+    });
+    expect(nodes.find((n) => n.id === "draft_0")).toBeUndefined();
   });
 });
