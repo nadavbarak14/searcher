@@ -91,7 +91,7 @@ export function buildCanvas(input: {
     if (pruned.has(dr.id)) continue;
     if (!(visible.has(dr.parentId) && expanded.has(dr.parentId))) continue;
     const node: CanvasNode = {
-      id: dr.id, kind: "finding", title: "", expanded: true, pending: false,
+      id: dr.id, kind: "finding", title: "", expanded: false, pending: false, // expanded unused for drafts
       draft: true, anchor: dr.anchor, parentId: dr.parentId,
     };
     nodes.push(node);
