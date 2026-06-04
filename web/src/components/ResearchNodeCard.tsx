@@ -182,7 +182,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
           padding: "16px 18px",
         }}
       >
-        <Handle type="target" position={RFPosition.Top} />
+        <Handle type="target" position={RFPosition.Left} />
         {d.onRemove && <CardToolbar show={hover} copyText={d.title} onRemove={d.onRemove} />}
         <div className="eyebrow" style={{ color: "var(--clay)", marginBottom: 10, display: "flex", gap: 8, alignItems: "center" }}>
           {d.error ? "Failed" : "Researching"}
@@ -206,7 +206,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
             )}
           </div>
         )}
-        <Handle type="source" position={RFPosition.Bottom} />
+        <Handle type="source" position={RFPosition.Right} />
       </div>
     );
   }
@@ -224,7 +224,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
           padding: "18px 20px",
         }}
       >
-        <Handle type="target" position={RFPosition.Top} />
+        <Handle type="target" position={RFPosition.Left} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <span className="eyebrow" style={{ color: "var(--clay)" }}>◆ Topic</span>
           <span className="mono" style={{ fontSize: 10.5, color: "var(--clay)" }}>ROOT</span>
@@ -235,7 +235,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
         <div className="mono" style={{ fontSize: 11, color: "var(--ink-soft)", marginTop: 12 }}>
           {d.childCount ?? 0} {d.childCount === 1 ? "FINDING" : "FINDINGS"}&nbsp;·&nbsp;DEEP PASS COMPLETE
         </div>
-        <Handle type="source" position={RFPosition.Bottom} />
+        <Handle type="source" position={RFPosition.Right} />
       </div>
     );
   }
@@ -257,7 +257,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
         transition: "width .18s ease, box-shadow .18s ease",
       }}
     >
-      <Handle type="target" position={RFPosition.Top} />
+      <Handle type="target" position={RFPosition.Left} />
       <CardToolbar show={hover} copyText={d.body || d.title} onRemove={d.onRemove} />
 
       {/* header — click toggles expand; whole node is the drag handle */}
@@ -312,7 +312,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
         </div>
       )}
 
-      <Handle type="source" position={RFPosition.Bottom} />
+      <Handle type="source" position={RFPosition.Right} />
     </div>
   );
 }
