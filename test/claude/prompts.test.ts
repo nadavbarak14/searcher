@@ -17,6 +17,15 @@ describe("prompts", () => {
     expect(p).toContain("why transfer?");
     expect(p).toContain("What are adversarial examples?");
   });
+  it("BRANCH_SYSTEM tells Claude it is continuing one project using the brief", () => {
+    expect(BRANCH_SYSTEM).toContain("research brief");
+  });
+  it("branchPrompt prepends the brief when one is given", () => {
+    const p = branchPrompt({ topic: "AI security", selection: "x", question: "q", ancestorTitles: [], brief: "RESEARCH GOAL: AI security" });
+    expect(p).toContain("RESEARCH GOAL: AI security");
+    // the brief comes before the per-question detail
+    expect(p.indexOf("RESEARCH GOAL")).toBeLessThan(p.indexOf("My question"));
+  });
   it("synthesizePrompt includes the topic", () => {
     expect(synthesizePrompt("AI security")).toContain("AI security");
   });
