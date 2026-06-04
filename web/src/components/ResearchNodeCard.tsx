@@ -1,5 +1,5 @@
 import { memo, useRef, useState } from "react";
-import { Handle, Position as RFPosition, type NodeProps } from "@xyflow/react";
+import { Handle, Position as RFPosition, useStore, type NodeProps } from "@xyflow/react";
 import { Icon } from "./ui";
 import type { Anchor } from "../types";
 import { anchorFromSelection } from "../graph/anchor";
@@ -217,6 +217,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [sel, setSel] = useState<{ anchor: Anchor; top: number; left: number } | null>(null);
+  const zoom = useStore((s) => s.transform[2]);
 
   const onBodyMouseUp = () => {
     const s = window.getSelection();
@@ -230,7 +231,8 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
     const anchor = anchorFromSelection(body.textContent ?? "", text, start);
     const r = range.getBoundingClientRect();
     const cardRect = (cardRef.current ?? body).getBoundingClientRect();
-    setSel({ anchor, top: r.bottom - cardRect.top + 6, left: r.left - cardRect.left });
+    const z = zoom || 1;
+    setSel({ anchor, top: (r.bottom - cardRect.top) / z + 6, left: (r.left - cardRect.left) / z });
   };
 
   // ---- draft compose node ----
