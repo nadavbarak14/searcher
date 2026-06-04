@@ -133,4 +133,13 @@ describe("buildCanvas", () => {
     const e = edges.find((x) => x.target === "n_1")!;
     expect(e.sourceHandle).toBe("a0_0");
   });
+
+  it("sets sourceHandle on a draft edge too", () => {
+    const metas = [meta("topic", []), meta("n_1", ["topic"])];
+    const { edges } = buildCanvas({
+      metas, expanded: new Set(["topic", "n_1"]), bodies: { n_1: "body" }, pending: [], positions: {},
+      drafts: [{ id: "draft_0", parentId: "n_1", anchor: { text: "body", offset: 0, occurrence: 0 } }],
+    });
+    expect(edges.find((e) => e.target === "draft_0")?.sourceHandle).toBe("a0_0");
+  });
 });

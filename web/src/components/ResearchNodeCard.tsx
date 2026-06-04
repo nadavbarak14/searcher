@@ -230,7 +230,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
     const next: Record<string, number> = {};
     for (const a of d.anchors) {
       const key = anchorKey(a);
-      const mark = card.querySelector<HTMLElement>(`mark[data-akey="${key}"]`);
+      const mark = card.querySelector<HTMLElement>(`mark[data-akey~="${key}"]`);
       if (!mark) continue;
       next[key] = Math.max(8, Math.min(mark.getBoundingClientRect().top - card.getBoundingClientRect().top, card.offsetHeight - 8));
     }
@@ -344,7 +344,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
   const bodyContent = (d.body && d.anchors?.length)
     ? highlightSegments(d.body, d.anchors).map((seg, i) =>
         seg.keys.length
-          ? <mark key={i} data-akey={seg.keys[0]} className="anchor-mark">{seg.text}</mark>
+          ? <mark key={i} data-akey={seg.keys.join(" ")} className="anchor-mark">{seg.text}</mark>
           : <span key={i}>{seg.text}</span>)
     : d.body;
   return (

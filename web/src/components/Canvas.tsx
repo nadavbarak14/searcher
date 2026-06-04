@@ -283,6 +283,7 @@ function Flow({
 
   const rfEdges: Edge[] = model.edges.map((e) => {
     const edge: Edge = { id: e.id, source: e.source, target: e.target };
+    if (e.sourceHandle) edge.sourceHandle = e.sourceHandle; // bind anchored edges to the per-span source handle on the parent card
     const isPending = e.target.startsWith("pending_");
     if (isPending) edge.className = "pending";
     // label child edges (not the topic's first-level fan-out) with the child's question
