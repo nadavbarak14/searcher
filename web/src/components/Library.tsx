@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { ProjectSummary } from "../types";
 import { Icon, Wordmark, MiniGraph } from "./ui";
@@ -35,11 +35,19 @@ export function Library({ onStart, onOpen }: { onStart: (topic: string) => void;
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [topic, setTopic] = useState("");
   const [focus, setFocus] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     api.listProjects().then(setProjects).catch(() => setProjects([]));
   }, []);
+
+  // grow the topic field downward as it wraps (1 row → up to ~5), instead of one long line
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [topic]);
 
   const start = () => {
     if (topic.trim()) onStart(topic.trim());
@@ -98,7 +106,7 @@ export function Library({ onStart, onOpen }: { onStart: (topic: string) => void;
             style={{
               display: "flex",
               gap: 10,
-              alignItems: "center",
+              alignItems: "flex-end",
               cursor: "text",
               background: "var(--card)",
               border: `1.5px solid ${focus ? "var(--accent)" : "var(--line-strong)"}`,
@@ -108,18 +116,24 @@ export function Library({ onStart, onOpen }: { onStart: (topic: string) => void;
               transition: "border-color .15s ease, box-shadow .15s ease",
             }}
           >
-            <span style={{ display: "flex", alignItems: "center", color: focus ? "var(--accent)" : "var(--faint)", transition: "color .15s ease" }}>
+            <span style={{ display: "flex", alignItems: "center", height: 42, color: focus ? "var(--accent)" : "var(--faint)", transition: "color .15s ease" }}>
               <Icon name="search" size={20} />
             </span>
-            <input
+            <textarea
               ref={inputRef}
               autoFocus
+              rows={1}
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
               onFocus={() => setFocus(true)}
               onBlur={() => setFocus(false)}
-              onKeyDown={(e) => e.key === "Enter" && start()}
-              placeholder="Name a topic to research…"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  start();
+                }
+              }}
+              placeholder="Name a topic to research… (Shift+Enter for a new line)"
               style={{
                 flex: 1,
                 border: "none",
@@ -127,11 +141,14 @@ export function Library({ onStart, onOpen }: { onStart: (topic: string) => void;
                 background: "transparent",
                 fontFamily: "var(--sans)",
                 fontSize: 16.5,
+                lineHeight: 1.45,
                 color: "var(--ink)",
-                padding: "9px 0",
+                padding: "10px 0",
+                resize: "none",
+                overflow: "hidden",
               }}
             />
-            {topic.trim() && <span className="kbd" style={{ marginRight: 4 }}>↵</span>}
+            {topic.trim() && <span className="kbd" style={{ marginBottom: 13 }}>↵</span>}
             <button
               className="btn btn-primary"
               onClick={(e) => {
@@ -139,7 +156,7 @@ export function Library({ onStart, onOpen }: { onStart: (topic: string) => void;
                 start();
               }}
               disabled={!topic.trim()}
-              style={{ padding: "0 20px", alignSelf: "stretch" }}
+              style={{ padding: "0 20px", height: 42, flexShrink: 0 }}
             >
               Begin research <Icon name="arrowUpRight" size={16} />
             </button>

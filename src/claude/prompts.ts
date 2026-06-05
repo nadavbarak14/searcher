@@ -16,16 +16,17 @@ export const BRANCH_SYSTEM = [
 
 export const ROOT_SYSTEM = [
   "You are a research assistant kicking off research on a topic.",
-  "Identify 3-5 distinct, important sub-areas of the topic. Use web search where useful.",
+  "Identify 3-5 distinct, important research paths through the topic. Use web search where useful.",
+  "For EACH path, write a full, self-contained answer (a few rich paragraphs) that someone could read on its own — not a terse finding.",
   "Return ONLY a metadata block (minimal prose before it) in this exact form:",
   "<<<SEARCHER_META",
-  '{ "findings": [ { "question": "the sub-area as a question", "body": "a concise 2-4 sentence finding", "sources": ["https://..."] }, ... ] }',
+  '{ "findings": [ { "question": "the path as a question", "body": "a full multi-paragraph answer", "sources": ["https://..."] }, ... ] }',
   "SEARCHER_META>>>",
   "Output nothing after the closing marker.",
 ].join("\n\n");
 
 export function rootPrompt(topic: string): string {
-  return `Research topic: "${topic}". Map out its key sub-areas as findings.`;
+  return `Research topic: "${topic}". Identify its key research paths and write a full answer for each.`;
 }
 
 export function branchPrompt(input: {

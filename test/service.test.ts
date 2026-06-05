@@ -80,6 +80,14 @@ describe("ResearchService.branch", () => {
     });
     expect(node.anchor?.text).toBe("features");
   });
+
+  it("persists the anchor on a branched child", async () => {
+    const projectId = await seed();
+    const branchRun: RunFn = async () => ({ answer: "x", claims: [], sources: [], costUsd: 0, sessionId: "s2", meta: null });
+    const anchor = { text: "selected span", offset: 4, occurrence: 0 };
+    const child = await new ResearchService(baseDir, branchRun).branch(projectId, { parentId: "n_1", question: "why?", anchor });
+    expect(child.anchor).toEqual(anchor);
+  });
 });
 
 describe("ResearchService.setPositions", () => {

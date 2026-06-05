@@ -1,12 +1,12 @@
 import type { NodeMeta } from "../types";
 
-const ROW_H = 380;
-const COL_W = 420;
+export const COL_W = 480; // x gap between depth columns (answer nodes are wide)
+export const ROW_H = 200; // y gap between siblings within a column
 
 /**
- * Layered tree layout. The topic sits at row 0; a node's row is 1 + the shallowest
- * resolvable parent. Siblings on a row are spread horizontally, centered on x=0.
- * Used only to place nodes that have no saved position yet.
+ * Layered tree layout, growing LEFT→RIGHT. The topic sits at column 0 (x=0); a node's
+ * column is 1 + the shallowest resolvable parent. Siblings in a column are spread
+ * vertically, centered on y=0. Used only to place nodes that have no saved position yet.
  */
 export function layoutNodes(metas: NodeMeta[]): Record<string, { x: number; y: number }> {
   const byId = new Map(metas.map((m) => [m.id, m]));
@@ -25,17 +25,17 @@ export function layoutNodes(metas: NodeMeta[]): Record<string, { x: number; y: n
     return d;
   };
 
-  const rows = new Map<number, string[]>();
+  const cols = new Map<number, string[]>();
   for (const m of metas) {
     const d = depthOf(m.id);
-    const row = rows.get(d) ?? rows.set(d, []).get(d)!;
-    row.push(m.id);
+    const col = cols.get(d) ?? cols.set(d, []).get(d)!;
+    col.push(m.id);
   }
 
   const out: Record<string, { x: number; y: number }> = {};
-  for (const [d, ids] of rows) {
+  for (const [d, ids] of cols) {
     ids.forEach((id, i) => {
-      out[id] = { x: (i - (ids.length - 1) / 2) * COL_W, y: d * ROW_H };
+      out[id] = { x: d * COL_W, y: (i - (ids.length - 1) / 2) * ROW_H };
     });
   }
   return out;
