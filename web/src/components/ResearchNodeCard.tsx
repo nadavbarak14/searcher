@@ -128,7 +128,7 @@ function AskBox({ onAsk }: { onAsk: (q: string) => void }) {
           }
         }}
         placeholder="Ask a follow-up — Claude answers as a new child node…"
-        className="field"
+        className="field nodrag nopan nowheel"
         style={{ fontSize: 13.5, resize: "none", lineHeight: 1.45 }}
       />
       <div style={{ display: "flex", gap: 8, marginTop: 8, justifyContent: "flex-end" }}>
@@ -198,7 +198,7 @@ function DraftCard({ anchorText, onSubmit, onCancel }: { anchorText: string; onS
       )}
       <textarea autoFocus value={draft} rows={2} onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } if (e.key === "Escape") onCancel(); }}
-        placeholder="Ask about this selection — Claude answers here…" className="field nodrag"
+        placeholder="Ask about this selection — Claude answers here…" className="field nodrag nopan nowheel"
         style={{ fontSize: 13.5, resize: "none", lineHeight: 1.45 }} />
       <div style={{ display: "flex", gap: 8, marginTop: 8, justifyContent: "flex-end" }}>
         <button className="btn btn-ghost btn-sm nodrag" onClick={onCancel}>Cancel</button>
@@ -223,7 +223,12 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
   const [scrollTick, setScrollTick] = useState(0);
   const updateNodeInternals = useUpdateNodeInternals();
 
-  // after render, measure each mark's top within the card; drive a re-render via state
+  // Stable signature of the anchors so the measure effect only runs when the highlighted
+  // spans actually change — NOT on every parent re-render (e.g. every frame of a drag),
+  // which previously caused getBoundingClientRect thrash + updateNodeInternals churn = flicker.
+  const anchorsSig = (d.anchors ?? []).map((a) => anchorKey(a)).join("|");
+
+  // measure each mark's top within the card; drive a re-render via state so handles pin to spans
   useLayoutEffect(() => {
     const card = cardRef.current;
     if (!card || !d.anchors?.length) return;
@@ -232,12 +237,14 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
       const key = anchorKey(a);
       const mark = card.querySelector<HTMLElement>(`mark[data-akey~="${key}"]`);
       if (!mark) continue;
-      next[key] = Math.max(8, Math.min(mark.getBoundingClientRect().top - card.getBoundingClientRect().top, card.offsetHeight - 8));
+      next[key] = Math.round(Math.max(8, Math.min(mark.getBoundingClientRect().top - card.getBoundingClientRect().top, card.offsetHeight - 8)));
     }
     const keys = Object.keys(next);
     const changed = keys.length !== Object.keys(markTops).length || keys.some((k) => markTops[k] !== next[k]);
     if (changed) setMarkTops(next);
-  }); // no dep array: runs after every render (incl. scrollTick bumps); self-limits via the `changed` guard
+    // runs only when spans / expansion / body / scroll / zoom change — not during node drags
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchorsSig, d.expanded, d.body, scrollTick, zoom]);
 
   // tell React Flow to recompute edge geometry AFTER markTops is applied to the DOM
   useEffect(() => {
@@ -284,7 +291,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
         <Handle type="target" position={RFPosition.Left} />
         {d.onRemove && <CardToolbar show={hover} copyText={d.title} onRemove={d.onRemove} />}
         <div className="eyebrow" style={{ color: "var(--clay)", marginBottom: 10, display: "flex", gap: 8, alignItems: "center" }}>
-          {d.error ? "Failed" : "Researching"}
+          {d.error ? "Failed" : "Thinking…"}
           {!d.error && (
             <span style={{ display: "inline-flex", gap: 4 }}>
               {[0, 1, 2].map((i) => (
@@ -334,6 +341,7 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
         <div className="mono" style={{ fontSize: 11, color: "var(--ink-soft)", marginTop: 12 }}>
           {d.childCount ?? 0} {d.childCount === 1 ? "FINDING" : "FINDINGS"}&nbsp;·&nbsp;DEEP PASS COMPLETE
         </div>
+        <AskBox onAsk={d.onAsk} />
         <Handle type="source" position={RFPosition.Right} />
       </div>
     );
@@ -412,8 +420,10 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
             onMouseUp={onBodyMouseUp}
             onScroll={() => setScrollTick((t) => t + 1)}
             data-scroll={scrollTick}
-            className="nodrag serif"
-            style={{ fontSize: 15, lineHeight: 1.62, color: "var(--ink-soft)", maxHeight: 260, overflow: "auto", whiteSpace: "pre-wrap" }}
+            // nodrag: don't drag the node · nopan: don't pan the pane · nowheel: scroll the body instead of zooming
+            className="nodrag nopan nowheel serif"
+            // RF sets user-select:none on .react-flow__node; re-enable it so text is selectable for Follow-up
+            style={{ fontSize: 15, lineHeight: 1.62, color: "var(--ink-soft)", maxHeight: 260, overflow: "auto", whiteSpace: "pre-wrap", userSelect: "text", WebkitUserSelect: "text", cursor: "text" }}
           >
             {d.body === undefined
               ? <span className="mono" style={{ color: "var(--faint)" }}>Loading…</span>
