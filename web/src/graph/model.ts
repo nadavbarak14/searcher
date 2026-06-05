@@ -88,6 +88,7 @@ export function buildCanvas(input: {
     const node: CanvasNode = { id: pn.id, kind: "finding", title: pn.question, expanded: false, pending: true, parentId: pn.parentId };
     if (pn.error) node.error = pn.error;
     if (pn.anchor) node.anchor = pn.anchor;
+    if (positions[pn.id]) node.position = positions[pn.id];
     nodes.push(node);
     const pendingEdge: CanvasEdge = { id: `${pn.parentId}->${pn.id}`, source: pn.parentId, target: pn.id, label: pn.question };
     if (pn.anchor) pendingEdge.sourceHandle = anchorKey(pn.anchor);
@@ -101,6 +102,7 @@ export function buildCanvas(input: {
       id: dr.id, kind: "finding", title: "", expanded: false, pending: false, // expanded unused for drafts
       draft: true, anchor: dr.anchor, parentId: dr.parentId,
     };
+    if (positions[dr.id]) node.position = positions[dr.id];
     nodes.push(node);
     edges.push({ id: `${dr.parentId}->${dr.id}`, source: dr.parentId, target: dr.id, sourceHandle: anchorKey(dr.anchor) });
   }
