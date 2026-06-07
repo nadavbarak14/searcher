@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
 import { GraphStore } from "./graph/store.js";
 import { projectDir } from "./graph/paths.js";
-import type { ResearchNode, Anchor } from "./graph/types.js";
+import type { ResearchNode, Anchor, GraphIndex } from "./graph/types.js";
 import { runClaude, runClaudeStream, type ActivityEvent } from "./claude/runner.js";
 import { BRANCH_SYSTEM, ROOT_SYSTEM, rootPrompt, branchPrompt, synthesizePrompt } from "./claude/prompts.js";
+import { buildBrief } from "./research/brief.js";
 
 /** The runner shape the service depends on (matches ClaudeResult). Tests inject a fake. */
 export interface RunResult {
@@ -134,6 +135,17 @@ export class ResearchService {
     });
   }
 
+  /** Load every finding node's question + body, in index (creation) order, for the brief. */
+  private async findingsFor(store: GraphStore, index: GraphIndex): Promise<{ question: string; body: string }[]> {
+    const metas = index.nodes.filter((n) => n.kind === "finding");
+    return Promise.all(
+      metas.map(async (m) => {
+        const node = await store.getNode(m.id);
+        return { question: node.question, body: node.body };
+      }),
+    );
+  }
+
   /**
    * Ask one question about a node and persist the answer as a child finding. Questions are
    * whole-node by default; `anchor` is optional and only set for legacy text-anchored links.
@@ -143,11 +155,13 @@ export class ResearchService {
     const index = await store.load();
     const parent = await store.getNode(input.parentId);
     const cwd = projectDir(this.baseDir, projectId);
+    const brief = buildBrief({ goal: index.topic, findings: await this.findingsFor(store, index) });
     const prompt = branchPrompt({
       topic: index.topic,
       selection: input.anchor?.text ?? parent.question,
       question: input.question,
       ancestorTitles: [parent.question],
+      brief,
     });
     const res = await this.run({ cwd, prompt, systemPrompt: BRANCH_SYSTEM }, onActivity);
     const finding: Parameters<typeof store.addFinding>[0] = {

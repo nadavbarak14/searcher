@@ -7,7 +7,8 @@ const META_INSTRUCTIONS = [
 ].join("\n");
 
 export const BRANCH_SYSTEM = [
-  "You are a research assistant inside a knowledge-graph app.",
+  "You are a research assistant inside a knowledge-graph app, working on ONE ongoing research project.",
+  "A research brief — the overall goal and what the project has found so far — is included with each question. Treat it as your through-line: build on what's established, connect your answer to the goal, and don't re-explain what the brief already covers.",
   "Answer the user's question concisely and factually. Use web search when it helps and cite sources.",
   "You may read sibling research notes: they are .md files in your current working directory; read them if they add context.",
   META_INSTRUCTIONS,
@@ -31,10 +32,17 @@ export function rootPrompt(topic: string): string {
   return `Research this topic thoroughly using web search, then split what you found into a short summary and a set of content-filled nodes: "${topic}".`;
 }
 
-export function branchPrompt(input: { topic: string; selection: string; question: string; ancestorTitles: string[] }): string {
+export function branchPrompt(input: {
+  topic: string;
+  selection: string;
+  question: string;
+  ancestorTitles: string[];
+  brief?: string;
+}): string {
   const trail = input.ancestorTitles.length ? `\nResearch context (ancestor questions):\n- ${input.ancestorTitles.join("\n- ")}` : "";
+  const preamble = input.brief ? `${input.brief}\n\n---\n\n` : "";
   return [
-    `Overall research topic: "${input.topic}".`,
+    `${preamble}Overall research topic: "${input.topic}".`,
     `I am drilling into this selected text: "${input.selection}".`,
     `My question: ${input.question}`,
     trail,

@@ -126,6 +126,18 @@ describe("ResearchService.branch", () => {
     expect(node.costUsd).toBe(0.02);
   });
 
+  it("injects a research brief (goal + prior findings) into the branch prompt", async () => {
+    const projectId = await seed();
+    let seenPrompt = "";
+    const branchRun: RunFn = async ({ prompt }) => {
+      seenPrompt = prompt;
+      return { answer: "x", claims: [], sources: [], costUsd: 0, sessionId: "s2", meta: null };
+    };
+    await new ResearchService(baseDir, branchRun).branch(projectId, { parentId: "n_1", question: "why?" });
+    expect(seenPrompt).toContain("RESEARCH GOAL: AI security");
+    expect(seenPrompt).toContain("Q1 — B1"); // the existing finding shows up as accumulated memory
+  });
+
   it("still accepts an optional anchor", async () => {
     const projectId = await seed();
     const branchRun: RunFn = async () => ({ answer: "x", claims: [], sources: [], costUsd: 0, sessionId: "s2", meta: null });
