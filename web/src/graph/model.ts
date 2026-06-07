@@ -4,67 +4,63 @@ import { anchorKey } from "./anchor";
 export interface PendingNode { id: string; parentId: string; question: string; error?: string; anchor?: Anchor; activity?: string }
 export interface DraftNode { id: string; parentId: string; anchor: Anchor }
 
+/** A child branching off a node, with the span it anchors to — drives the panel's marks + jump popover. */
+export interface ChildLink { anchor: Anchor; childId: string; childTitle: string; pending?: boolean }
+
 export interface CanvasNode {
   id: string;
   kind: "topic" | "finding";
   title: string;
-  expanded: boolean;
   pending: boolean;
   draft?: boolean;
-  anchor?: Anchor;
-  anchors?: Anchor[]; // distinct anchors of this node's children (real + pending + draft), for span highlighting
-  parentId?: string; // set on pending/draft nodes so the UI can recover the parent (e.g. for retry)
-  activity?: string; // latest live-activity line on a pending node
-  body?: string;
-  sources?: string[];
-  childCount?: number; // findings that branch directly off this node (used for the topic card meta)
-  tokens?: number; // total tokens this node's Claude call consumed
-  costUsd?: number; // USD cost of that call
-  teaser?: string; // a thread's one-line "why" (collapsed signpost)
-  researched?: boolean; // false on an unresearched thread; true once it has a real body
+  anchor?: Anchor;          // draft/pending: the span it branches from
+  parentId?: string;        // set on pending/draft nodes so the UI can recover the parent (e.g. for retry)
+  activity?: string;        // latest live-activity line on a pending node
+  childCount?: number;      // findings that branch directly off this node (card meta)
+  childLinks?: ChildLink[]; // this node's children, for panel highlighting + jump-to
+  tokens?: number;          // total tokens this node's Claude call consumed
+  costUsd?: number;         // USD cost of that call
+  teaser?: string;          // a thread's one-line "why"
+  researched?: boolean;     // false on an unresearched thread; true once it has a real body
   error?: string;
   position?: Position;
 }
-export interface CanvasEdge { id: string; source: string; target: string; label?: string; sourceHandle?: string }
+export interface CanvasEdge { id: string; source: string; target: string; label?: string }
 
 /**
- * Derive the visible canvas from the index + UI state. Visibility: the topic is always
- * visible; any other node is visible iff at least one parent is itself visible AND expanded.
- * (Expand/collapse therefore cascades — a collapsed node hides its whole subtree.) Pending
- * nodes attach to a parent and show only while that parent is visible-and-expanded.
+ * Derive the visible canvas from the index + UI state. The whole graph is a map now: every
+ * non-pruned node is visible (pruning hides a node and its subtree). Reading happens in the side
+ * panel, not on the cards, so there is no expand/collapse gating. Pending + draft nodes attach to
+ * a parent and show while that parent is visible.
  */
 export function buildCanvas(input: {
   metas: NodeMeta[];
-  expanded: Set<string>;
-  bodies: Record<string, string>;
-  sources?: Record<string, string[]>;
   pruned?: Set<string>;
   pending: PendingNode[];
-  positions: Record<string, Position>;
   drafts?: DraftNode[];
+  positions: Record<string, Position>;
 }): { nodes: CanvasNode[]; edges: CanvasEdge[] } {
-  const { metas, expanded, bodies, pending, positions } = input;
-  const sources = input.sources ?? {};
+  const { metas, pending, positions } = input;
   const pruned = input.pruned ?? new Set<string>();
   const drafts = input.drafts ?? [];
 
-  // direct-child counts, used for the topic card's "N FINDINGS" meta line
+  // direct-child counts (used for a card's "N threads" meta line)
   const childCount = new Map<string, number>();
   for (const m of metas) {
     if (pruned.has(m.id)) continue;
     for (const p of m.parents) childCount.set(p, (childCount.get(p) ?? 0) + 1);
   }
 
-  const visible = new Set<string>(["topic"]);
+  // Every node reachable from the topic through non-pruned nodes is visible. Pruning a node
+  // therefore hides its whole subtree (children lose their only path to the root).
+  const visible = new Set<string>();
+  if (!pruned.has("topic")) visible.add("topic");
   let changed = true;
   while (changed) {
     changed = false;
     for (const m of metas) {
       if (visible.has(m.id) || pruned.has(m.id)) continue;
-      if (m.parents.some((p) => visible.has(p) && expanded.has(p))) {
-        visible.add(m.id);
-        changed = true;
-      }
+      if (m.parents.some((p) => visible.has(p))) { visible.add(m.id); changed = true; }
     }
   }
 
@@ -73,10 +69,8 @@ export function buildCanvas(input: {
 
   for (const m of metas) {
     if (!visible.has(m.id)) continue;
-    const node: CanvasNode = { id: m.id, kind: m.kind, title: m.question, expanded: expanded.has(m.id), pending: false };
-    if (bodies[m.id] !== undefined) node.body = bodies[m.id];
-    if (sources[m.id] !== undefined) node.sources = sources[m.id];
-    if (m.kind === "topic") node.childCount = childCount.get(m.id) ?? 0;
+    const node: CanvasNode = { id: m.id, kind: m.kind, title: m.question, pending: false };
+    node.childCount = childCount.get(m.id) ?? 0;
     if (m.tokens !== undefined) node.tokens = m.tokens;
     if (m.costUsd !== undefined) node.costUsd = m.costUsd;
     if (m.teaser !== undefined) node.teaser = m.teaser;
@@ -85,53 +79,43 @@ export function buildCanvas(input: {
     nodes.push(node);
     for (const p of m.parents) {
       if (!visible.has(p)) continue;
-      const edge: CanvasEdge = { id: `${p}->${m.id}`, source: p, target: m.id };
-      if (m.anchor) edge.sourceHandle = anchorKey(m.anchor);
-      edges.push(edge);
+      edges.push({ id: `${p}->${m.id}`, source: p, target: m.id });
     }
   }
 
   for (const pn of pending) {
-    if (pruned.has(pn.id)) continue;
-    if (!(visible.has(pn.parentId) && expanded.has(pn.parentId))) continue;
-    const node: CanvasNode = { id: pn.id, kind: "finding", title: pn.question, expanded: false, pending: true, parentId: pn.parentId };
+    if (pruned.has(pn.id) || !visible.has(pn.parentId)) continue;
+    const node: CanvasNode = { id: pn.id, kind: "finding", title: pn.question, pending: true, parentId: pn.parentId };
     if (pn.error) node.error = pn.error;
     if (pn.activity) node.activity = pn.activity;
     if (pn.anchor) node.anchor = pn.anchor;
     if (positions[pn.id]) node.position = positions[pn.id];
     nodes.push(node);
-    const pendingEdge: CanvasEdge = { id: `${pn.parentId}->${pn.id}`, source: pn.parentId, target: pn.id, label: pn.question };
-    if (pn.anchor) pendingEdge.sourceHandle = anchorKey(pn.anchor);
-    edges.push(pendingEdge);
+    edges.push({ id: `${pn.parentId}->${pn.id}`, source: pn.parentId, target: pn.id, label: pn.question });
   }
 
   for (const dr of drafts) {
-    if (pruned.has(dr.id)) continue;
-    if (!(visible.has(dr.parentId) && expanded.has(dr.parentId))) continue;
-    const node: CanvasNode = {
-      id: dr.id, kind: "finding", title: "", expanded: false, pending: false, // expanded unused for drafts
-      draft: true, anchor: dr.anchor, parentId: dr.parentId,
-    };
+    if (pruned.has(dr.id) || !visible.has(dr.parentId)) continue;
+    const node: CanvasNode = { id: dr.id, kind: "finding", title: "", pending: false, draft: true, anchor: dr.anchor, parentId: dr.parentId };
     if (positions[dr.id]) node.position = positions[dr.id];
     nodes.push(node);
-    edges.push({ id: `${dr.parentId}->${dr.id}`, source: dr.parentId, target: dr.id, sourceHandle: anchorKey(dr.anchor) });
+    edges.push({ id: `${dr.parentId}->${dr.id}`, source: dr.parentId, target: dr.id });
   }
 
-  // collect, per visible parent, the distinct anchors of its children (real + pending + draft)
-  const anchorsByParent = new Map<string, Anchor[]>();
+  // child links per visible parent: real children are jump targets; pending/draft show as in-progress marks
+  const linksByParent = new Map<string, ChildLink[]>();
   const seen = new Map<string, Set<string>>();
-  const addAnchor = (parentId: string, a?: Anchor) => {
-    if (!a) return;
-    const key = anchorKey(a);
+  const add = (parentId: string, link: ChildLink) => {
+    const key = anchorKey(link.anchor);
     const s = seen.get(parentId) ?? seen.set(parentId, new Set()).get(parentId)!;
     if (s.has(key)) return;
     s.add(key);
-    (anchorsByParent.get(parentId) ?? anchorsByParent.set(parentId, []).get(parentId)!).push(a);
+    (linksByParent.get(parentId) ?? linksByParent.set(parentId, []).get(parentId)!).push(link);
   };
-  for (const m of metas) if (visible.has(m.id)) for (const p of m.parents) if (visible.has(p)) addAnchor(p, m.anchor);
-  for (const pn of pending) if (visible.has(pn.parentId) && expanded.has(pn.parentId)) addAnchor(pn.parentId, pn.anchor);
-  for (const dr of drafts) if (visible.has(dr.parentId) && expanded.has(dr.parentId)) addAnchor(dr.parentId, dr.anchor);
-  for (const node of nodes) { const a = anchorsByParent.get(node.id); if (a) node.anchors = a; }
+  for (const m of metas) if (visible.has(m.id) && m.anchor) for (const p of m.parents) if (visible.has(p)) add(p, { anchor: m.anchor, childId: m.id, childTitle: m.question });
+  for (const pn of pending) if (visible.has(pn.parentId) && pn.anchor) add(pn.parentId, { anchor: pn.anchor, childId: pn.id, childTitle: pn.question, pending: true });
+  for (const dr of drafts) if (visible.has(dr.parentId)) add(dr.parentId, { anchor: dr.anchor, childId: dr.id, childTitle: "", pending: true });
+  for (const node of nodes) { const l = linksByParent.get(node.id); if (l) node.childLinks = l; }
 
   return { nodes, edges };
 }
