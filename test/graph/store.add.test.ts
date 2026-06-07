@@ -51,6 +51,71 @@ describe("GraphStore.addFinding", () => {
     expect(reread.sources).toEqual(["https://x.test"]);
   });
 
+  it("persists tokens/costUsd onto the finding node and index meta", async () => {
+    const node = await store.addFinding({
+      parents: ["topic"],
+      question: "Why?",
+      body: "Because.",
+      sources: [],
+      tokens: 4200,
+      costUsd: 0.013,
+    });
+    const reread = await store.getNode(node.id);
+    expect(reread.tokens).toBe(4200);
+    expect(reread.costUsd).toBe(0.013);
+    const index = await store.loadIndex();
+    const meta = index.nodes.find((m) => m.id === node.id);
+    expect(meta?.tokens).toBe(4200);
+    expect(meta?.costUsd).toBe(0.013);
+  });
+
+  it("setNodeUsage attaches totals to the topic node + index, surviving a rebuild", async () => {
+    await store.setNodeUsage("topic", { tokens: 120000, costUsd: 0.5 });
+    const topic = await store.getNode("topic");
+    expect(topic.tokens).toBe(120000);
+    expect(topic.costUsd).toBe(0.5);
+    const index = await store.loadIndex();
+    expect(index.nodes.find((m) => m.id === "topic")?.tokens).toBe(120000);
+    const rebuilt = await store.rebuildIndex(); // proves it lives in the .md, not just the index
+    expect(rebuilt.nodes.find((m) => m.id === "topic")?.tokens).toBe(120000);
+    expect(rebuilt.nodes.find((m) => m.id === "topic")?.costUsd).toBe(0.5);
+  });
+
+  it("setNodeUsage ignores unknown ids without throwing", async () => {
+    await expect(store.setNodeUsage("nope", { tokens: 1 })).resolves.toBeUndefined();
+  });
+
+  it("addFinding persists teaser/researched onto the node + index meta", async () => {
+    const node = await store.addFinding({
+      parents: ["topic"], question: "Q?", body: "", sources: [], teaser: "why it matters", researched: false,
+    });
+    const reread = await store.getNode(node.id);
+    expect(reread.teaser).toBe("why it matters");
+    expect(reread.researched).toBe(false);
+    const meta = (await store.loadIndex()).nodes.find((m) => m.id === node.id);
+    expect(meta?.teaser).toBe("why it matters");
+    expect(meta?.researched).toBe(false);
+  });
+
+  it("updateNode patches body/sources/teaser/researched and mirrors onto the index meta", async () => {
+    const node = await store.addFinding({ parents: ["topic"], question: "Q?", body: "", sources: [], teaser: "w", researched: false });
+    const updated = await store.updateNode(node.id, { body: "Now researched.", sources: ["https://s"], tokens: 99, researched: true });
+    expect(updated.body).toBe("Now researched.");
+    expect(updated.sources).toEqual(["https://s"]);
+    expect(updated.tokens).toBe(99);
+    expect(updated.researched).toBe(true);
+    expect(updated.teaser).toBe("w"); // untouched
+    const reread = await store.getNode(node.id);
+    expect(reread.body).toBe("Now researched.");
+    const meta = (await store.loadIndex()).nodes.find((m) => m.id === node.id);
+    expect(meta?.researched).toBe(true);
+    expect(meta?.tokens).toBe(99);
+  });
+
+  it("updateNode throws on an unknown id", async () => {
+    await expect(store.updateNode("nope", { body: "x" })).rejects.toThrow(/unknown node nope/);
+  });
+
   it("records the finding's anchor in the index meta", async () => {
     const store = new GraphStore(baseDir, "p-anchor");
     await store.createProject("Topic");

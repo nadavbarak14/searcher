@@ -17,6 +17,7 @@ const sampleJson = JSON.stringify({
   result: "The answer.\n<<<SEARCHER_META\n{\"claims\":[\"c1\"],\"sources\":[\"https://s.test\"]}\nSEARCHER_META>>>",
   total_cost_usd: 0.01,
   session_id: "sess-1",
+  usage: { input_tokens: 10, output_tokens: 20, cache_creation_input_tokens: 5, cache_read_input_tokens: 1 },
 });
 
 describe("runClaude", () => {
@@ -27,6 +28,7 @@ describe("runClaude", () => {
     expect(res.claims).toEqual(["c1"]);
     expect(res.sources).toEqual(["https://s.test"]);
     expect(res.costUsd).toBe(0.01);
+    expect(res.tokens).toBe(36); // 10 + 20 + 5 + 1
     expect(res.sessionId).toBe("sess-1");
     expect(res.meta).toEqual({ claims: ["c1"], sources: ["https://s.test"] });
     const argv: string[] = calls[0].args;

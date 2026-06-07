@@ -8,6 +8,10 @@ export interface NodeMeta {
   question: string;
   created: string;
   position?: Position;
+  tokens?: number;
+  costUsd?: number;
+  teaser?: string;
+  researched?: boolean;
 }
 export interface GraphIndex { topic: string; nextSeq: number; nodes: NodeMeta[] }
 export interface ResearchNode extends NodeMeta { sources: string[]; body: string }

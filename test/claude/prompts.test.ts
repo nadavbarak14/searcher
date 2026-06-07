@@ -5,7 +5,8 @@ describe("prompts", () => {
   it("system prompts mention the SEARCHER_META protocol", () => {
     expect(BRANCH_SYSTEM).toContain("SEARCHER_META");
     expect(ROOT_SYSTEM).toContain("SEARCHER_META");
-    expect(ROOT_SYSTEM).toContain("findings");
+    expect(ROOT_SYSTEM).toContain("summary");
+    expect(ROOT_SYSTEM).toContain("nodes");
   });
   it("rootPrompt includes the topic", () => {
     expect(rootPrompt("AI security")).toContain("AI security");

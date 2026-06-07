@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { GraphStore } from "./graph/store.js";
 import { projectDir } from "./graph/paths.js";
 import type { ResearchNode, Anchor } from "./graph/types.js";
-import { runClaude } from "./claude/runner.js";
+import { runClaude, runClaudeStream, type ActivityEvent } from "./claude/runner.js";
 import { BRANCH_SYSTEM, ROOT_SYSTEM, rootPrompt, branchPrompt, synthesizePrompt } from "./claude/prompts.js";
 
 /** The runner shape the service depends on (matches ClaudeResult). Tests inject a fake. */
@@ -11,13 +11,19 @@ export interface RunResult {
   claims: string[];
   sources: string[];
   costUsd: number;
+  tokens?: number;
   sessionId: string;
   meta: Record<string, unknown> | null;
 }
-export type RunFn = (input: { cwd: string; prompt: string; systemPrompt: string }) => Promise<RunResult>;
+export type { ActivityEvent };
+export type RunFn = (
+  input: { cwd: string; prompt: string; systemPrompt: string },
+  onActivity?: (e: ActivityEvent) => void,
+) => Promise<RunResult>;
 
-interface Finding {
-  question: string;
+interface RootNode {
+  quote: string;
+  title: string;
   body: string;
   sources: string[];
 }
@@ -27,16 +33,29 @@ function projectIdFromTopic(topic: string): string {
   return slug || "research";
 }
 
-function parseFindings(meta: Record<string, unknown> | null): Finding[] {
-  if (!meta || !Array.isArray(meta.findings)) return [];
-  return (meta.findings as unknown[])
-    .filter((f): f is Record<string, unknown> => typeof f === "object" && f !== null)
-    .map((f) => ({
-      question: String(f.question ?? ""),
-      body: String(f.body ?? ""),
-      sources: Array.isArray(f.sources) ? (f.sources as unknown[]).filter((s): s is string => typeof s === "string") : [],
-    }))
-    .filter((f) => f.question || f.body);
+/** Parse the root research run's metadata into a short summary + the content-filled child nodes. */
+function parseRoot(meta: Record<string, unknown> | null): { summary: string; nodes: RootNode[] } {
+  const summary = typeof meta?.summary === "string" ? meta.summary : "";
+  const nodes = Array.isArray(meta?.nodes)
+    ? (meta!.nodes as unknown[])
+        .filter((t): t is Record<string, unknown> => typeof t === "object" && t !== null)
+        .map((t) => ({
+          quote: String(t.quote ?? ""),
+          title: String(t.title ?? ""),
+          body: String(t.body ?? ""),
+          sources: Array.isArray(t.sources) ? (t.sources as unknown[]).map(String) : [],
+        }))
+        .filter((t) => t.title)
+    : [];
+  return { summary, nodes };
+}
+
+/** Anchor a node back into the summary at the first match of its quote (0-based occurrence). */
+function anchorForQuote(summary: string, quote: string): Anchor | undefined {
+  if (!quote) return undefined;
+  const offset = summary.indexOf(quote);
+  if (offset < 0) return undefined;
+  return { text: quote, offset, occurrence: 0 };
 }
 
 async function uniqueProjectId(baseDir: string, slug: string): Promise<string> {
@@ -51,8 +70,14 @@ async function uniqueProjectId(baseDir: string, slug: string): Promise<string> {
 }
 
 /** Default production runner: delegates to runClaude with the real process env. */
-export const defaultRun: RunFn = ({ cwd, prompt, systemPrompt }) =>
-  runClaude({ cwd, prompt, systemPrompt, env: process.env as Record<string, string | undefined> });
+export const defaultRun: RunFn = ({ cwd, prompt, systemPrompt }, onActivity) => {
+  const env = process.env as Record<string, string | undefined>;
+  // Stream live activity only when a consumer is listening; otherwise keep the cheaper
+  // single-shot path so non-streaming callers and tests behave exactly as before.
+  return onActivity
+    ? runClaudeStream({ cwd, prompt, systemPrompt, env }, onActivity)
+    : runClaude({ cwd, prompt, systemPrompt, env });
+};
 
 export class ResearchService {
   constructor(
@@ -60,24 +85,60 @@ export class ResearchService {
     private readonly run: RunFn = defaultRun,
   ) {}
 
-  async createTopic(topic: string): Promise<{ projectId: string; findingCount: number }> {
+  async createTopic(topic: string, onActivity?: (e: ActivityEvent) => void): Promise<{ projectId: string; findingCount: number; tokens: number }> {
     const projectId = await uniqueProjectId(this.baseDir, projectIdFromTopic(topic));
     const store = new GraphStore(this.baseDir, projectId);
     await store.createProject(topic);
     const cwd = projectDir(this.baseDir, projectId);
-    const res = await this.run({ cwd, prompt: rootPrompt(topic), systemPrompt: ROOT_SYSTEM });
-    const findings = parseFindings(res.meta);
-    for (const f of findings) {
-      await store.addFinding({ parents: ["topic"], question: f.question, body: f.body, sources: f.sources });
+    const res = await this.run({ cwd, prompt: rootPrompt(topic), systemPrompt: ROOT_SYSTEM }, onActivity);
+    const { summary, nodes } = parseRoot(res.meta);
+    // The short summary becomes the topic node's body; the run's totals attach to the topic.
+    await store.updateNode("topic", { body: summary, sources: res.sources, tokens: res.tokens ?? 0, costUsd: res.costUsd ?? 0 });
+    // Each discovered node is already researched: it carries its own written-out findings + sources.
+    for (const n of nodes) {
+      const anchor = anchorForQuote(summary, n.quote);
+      await store.addFinding({
+        parents: ["topic"],
+        ...(anchor ? { anchor } : {}),
+        question: n.title,
+        body: n.body,
+        sources: n.sources,
+        researched: true,
+      });
     }
-    return { projectId, findingCount: findings.length };
+    return { projectId, findingCount: nodes.length, tokens: res.tokens ?? 0 };
+  }
+
+  /**
+   * Lazily research one (unresearched) thread node in place: run the branch flow against its
+   * anchored span/question and persist the answer onto the node, flipping `researched` true.
+   */
+  async researchNode(projectId: string, nodeId: string, onActivity?: (e: ActivityEvent) => void): Promise<ResearchNode> {
+    const store = new GraphStore(this.baseDir, projectId);
+    const index = await store.load();
+    const node = await store.getNode(nodeId);
+    const cwd = projectDir(this.baseDir, projectId);
+    const prompt = branchPrompt({
+      topic: index.topic,
+      selection: node.anchor?.text ?? node.question,
+      question: node.question,
+      ancestorTitles: ["topic"],
+    });
+    const res = await this.run({ cwd, prompt, systemPrompt: BRANCH_SYSTEM }, onActivity);
+    return store.updateNode(nodeId, {
+      body: res.answer,
+      sources: res.sources,
+      tokens: res.tokens ?? 0,
+      costUsd: res.costUsd ?? 0,
+      researched: true,
+    });
   }
 
   /**
    * Ask one question about a node and persist the answer as a child finding. Questions are
    * whole-node by default; `anchor` is optional and only set for legacy text-anchored links.
    */
-  async branch(projectId: string, input: { parentId: string; question: string; anchor?: Anchor }): Promise<ResearchNode> {
+  async branch(projectId: string, input: { parentId: string; question: string; anchor?: Anchor }, onActivity?: (e: ActivityEvent) => void): Promise<ResearchNode> {
     const store = new GraphStore(this.baseDir, projectId);
     const index = await store.load();
     const parent = await store.getNode(input.parentId);
@@ -88,12 +149,15 @@ export class ResearchService {
       question: input.question,
       ancestorTitles: [parent.question],
     });
-    const res = await this.run({ cwd, prompt, systemPrompt: BRANCH_SYSTEM });
+    const res = await this.run({ cwd, prompt, systemPrompt: BRANCH_SYSTEM }, onActivity);
     const finding: Parameters<typeof store.addFinding>[0] = {
       parents: [input.parentId],
       question: input.question,
       body: res.answer,
       sources: res.sources,
+      tokens: res.tokens ?? 0,
+      costUsd: res.costUsd ?? 0,
+      researched: true,
     };
     if (input.anchor) finding.anchor = input.anchor;
     return store.addFinding(finding);

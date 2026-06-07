@@ -1,8 +1,28 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import fastifyStatic from "@fastify/static";
 import fs from "node:fs/promises";
-import type { ResearchService } from "../service.js";
+import type { ResearchService, ActivityEvent } from "../service.js";
 import { GraphStore } from "../graph/store.js";
+
+/**
+ * Stream a service call as NDJSON: forward each ActivityEvent as a line, then a terminal
+ * {type:"result",data} (or {type:"error",message}) line, then end. Validation/headers must
+ * be handled by the caller before invoking this (we hijack the reply here).
+ */
+async function streamNdjson(reply: FastifyReply, work: (onActivity: (e: ActivityEvent) => void) => Promise<unknown>): Promise<void> {
+  reply.hijack();
+  const raw = reply.raw;
+  raw.writeHead(200, { "content-type": "application/x-ndjson" });
+  const write = (obj: unknown) => raw.write(JSON.stringify(obj) + "\n");
+  try {
+    const data = await work((e) => write(e));
+    write({ type: "result", data });
+  } catch (err) {
+    write({ type: "error", message: String(err instanceof Error ? err.message : err) });
+  } finally {
+    raw.end();
+  }
+}
 
 export interface AppDeps {
   dataDir: string;
@@ -33,7 +53,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   app.post<{ Body: { topic?: string } }>("/api/projects", async (req, reply) => {
     const topic = req.body?.topic?.trim();
     if (!topic) return reply.code(400).send({ error: "topic is required" });
-    return deps.service.createTopic(topic);
+    await streamNdjson(reply, (onActivity) => deps.service.createTopic(topic, onActivity));
   });
 
   app.get<{ Params: { id: string } }>("/api/projects/:id", async (req, reply) => {
@@ -56,7 +76,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     }
     const input: { parentId: string; question: string; anchor?: typeof anchor } = { parentId, question };
     if (anchor) input.anchor = anchor;
-    return deps.service.branch(req.params.id, input);
+    await streamNdjson(reply, (onActivity) => deps.service.branch(req.params.id, input, onActivity));
+  });
+
+  app.post<{ Params: { id: string; nodeId: string } }>("/api/projects/:id/nodes/:nodeId/research", async (req, reply) => {
+    await streamNdjson(reply, (onActivity) => deps.service.researchNode(req.params.id, req.params.nodeId, onActivity));
   });
 
   app.patch<{

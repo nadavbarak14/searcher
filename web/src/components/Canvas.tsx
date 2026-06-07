@@ -132,11 +132,18 @@ function Flow({
     return out;
   }, [index]);
 
-  // Lazily fetch the body + sources of any expanded, non-topic node we don't have yet.
+  const [researching, setResearching] = useState<Set<string>>(() => new Set());
+  const [researchActivity, setResearchActivity] = useState<Record<string, string>>({});
+  const [researchError, setResearchError] = useState<Record<string, string>>({});
+  const researchingRef = useRef<Set<string>>(new Set());
+
+  // Lazily fetch the body + sources of any expanded node we don't have yet (incl. the topic's
+  // report). Unresearched threads have no body to fetch — they're handled by the effect below.
   useEffect(() => {
     for (const id of expanded) {
       const meta = index.nodes.find((m) => m.id === id);
-      if (!meta || meta.kind === "topic") continue; // topic has no body
+      if (!meta) continue;
+      if (meta.researched === false) continue; // unresearched thread: researched lazily below
       if (details[id] !== undefined || fetching.current.has(id)) continue;
       fetching.current.add(id);
       void api
@@ -145,6 +152,33 @@ function Flow({
         .finally(() => fetching.current.delete(id));
     }
   }, [expanded, index, projectId, details]);
+
+  // Lazily RESEARCH any expanded, still-unresearched thread in place (streaming live activity),
+  // then fill its body and reload the index so meta.researched flips true + tokens show.
+  useEffect(() => {
+    for (const id of expanded) {
+      const meta = index.nodes.find((m) => m.id === id);
+      if (!meta || meta.researched !== false) continue;
+      if (details[id] !== undefined || researchingRef.current.has(id)) continue;
+      researchingRef.current.add(id);
+      setResearching((s) => new Set(s).add(id));
+      setResearchError((e) => { if (!(id in e)) return e; const next = { ...e }; delete next[id]; return next; });
+      void api
+        .researchNode(projectId, id, (e) => setResearchActivity((a) => ({ ...a, [id]: e.label })))
+        .then(async (n) => {
+          setDetails((b) => ({ ...b, [id]: { body: n.body, sources: n.sources } }));
+          await onReloadIndex();
+        })
+        .catch((err) => {
+          setResearchError((e) => ({ ...e, [id]: err instanceof Error ? err.message : String(err) }));
+        })
+        .finally(() => {
+          researchingRef.current.delete(id);
+          setResearching((s) => { const next = new Set(s); next.delete(id); return next; });
+          setResearchActivity((a) => { if (!(id in a)) return a; const next = { ...a }; delete next[id]; return next; });
+        });
+    }
+  }, [expanded, index, projectId, details, onReloadIndex]);
 
   const bodies = useMemo(() => Object.fromEntries(Object.entries(details).map(([id, d]) => [id, d.body])), [details]);
   const sources = useMemo(() => Object.fromEntries(Object.entries(details).map(([id, d]) => [id, d.sources])), [details]);
@@ -174,7 +208,9 @@ function Flow({
       setPending((p) => [...p, anchor ? { id: pid, parentId, question, anchor } : { id: pid, parentId, question }]);
       setExpanded((prev) => new Set(prev).add(parentId)); // keep parent open so the spinner shows
       try {
-        const created = await api.branch(projectId, parentId, question, anchor);
+        const created = await api.branch(projectId, parentId, question, anchor, (e) =>
+          setPending((p) => p.map((x) => (x.id === pid ? { ...x, activity: e.label } : x))),
+        );
         setDetails((b) => ({ ...b, [created.id]: { body: created.body, sources: created.sources } })); // prime from response
         setPending((p) => p.filter((x) => x.id !== pid));
         await onReloadIndex();
@@ -310,9 +346,20 @@ function Flow({
         if (n.sources !== undefined) data.sources = n.sources;
         if (n.childCount !== undefined) data.childCount = n.childCount;
         if (n.error !== undefined) data.error = n.error;
+        if (n.activity !== undefined) data.activity = n.activity;
+        if (n.tokens !== undefined) data.tokens = n.tokens;
+        if (n.costUsd !== undefined) data.costUsd = n.costUsd;
+        if (n.teaser !== undefined) data.teaser = n.teaser;
+        if (n.researched !== undefined) data.researched = n.researched;
+        // lazy in-place research state (unresearched threads)
+        if (researching.has(n.id)) {
+          data.researching = true;
+          if (data.activity === undefined && researchActivity[n.id] !== undefined) data.activity = researchActivity[n.id];
+        }
+        if (researchError[n.id] !== undefined && data.error === undefined) data.error = researchError[n.id];
         if (n.kind !== "topic") data.onRemove = () => removeNode(n.id);
         data.id = n.id;
-        if (n.kind !== "topic") data.onFollowUp = (anchor) => startFollowUp(n.id, anchor);
+        data.onFollowUp = (anchor) => startFollowUp(n.id, anchor);
         if (n.draft) {
           data.draft = true;
           data.anchorText = n.anchor?.text ?? "";
@@ -337,7 +384,7 @@ function Flow({
           data: data as unknown as Record<string, unknown>,
         };
       }),
-    [model, stackLayout, layout, drafts, toggle, ask, removeNode, startFollowUp, submitDraft, cancelDraft],
+    [model, stackLayout, layout, drafts, toggle, ask, removeNode, startFollowUp, submitDraft, cancelDraft, researching, researchActivity, researchError, details],
   );
 
   // React Flow owns the live node state so dragging is handled internally (smooth, single-node

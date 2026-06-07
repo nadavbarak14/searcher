@@ -3,3 +3,6 @@ dist/
 *.log
 /public/
 .superpowers/
+
+# Local research data
+.demo-data/

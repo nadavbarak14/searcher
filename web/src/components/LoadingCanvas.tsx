@@ -4,11 +4,13 @@ import { Icon } from "./ui";
 export function LoadingCanvas({
   topic,
   error,
+  activity,
   onRetry,
   onHome,
 }: {
   topic: string;
   error?: string;
+  activity?: string[];
   onRetry: () => void;
   onHome: () => void;
 }) {
@@ -102,9 +104,36 @@ export function LoadingCanvas({
             >
               &ldquo;{topic}&rdquo;
             </h2>
-            <p style={{ fontSize: 14, lineHeight: 1.55, color: "var(--muted)", margin: "0 0 24px" }}>
-              Claude is reading the web and mapping the findings. This runs on your subscription and may take a moment.
-            </p>
+            {activity && activity.length > 0 ? (
+              (() => {
+                const recent = activity.slice(-5);
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5, margin: "0 0 24px", minHeight: 90, justifyContent: "flex-end" }}>
+                    {recent.map((line, i) => (
+                      <div
+                        key={activity.length - recent.length + i}
+                        style={{
+                          fontSize: 13,
+                          lineHeight: 1.4,
+                          color: "var(--ink-soft)",
+                          // older lines fade out; newest (bottom) is fully opaque
+                          opacity: 0.35 + (0.65 * (i + 1)) / recent.length,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {line}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()
+            ) : (
+              <p style={{ fontSize: 14, lineHeight: 1.55, color: "var(--muted)", margin: "0 0 24px" }}>
+                Claude is reading the web and mapping the findings. This runs on your subscription and may take a moment.
+              </p>
+            )}
             <button className="btn btn-ghost btn-sm" onClick={onHome}>
               <Icon name="x" size={15} /> Cancel <span className="kbd" style={{ marginLeft: 2 }}>Esc</span>
             </button>

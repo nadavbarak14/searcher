@@ -1,7 +1,7 @@
 import type { NodeMeta, Position, Anchor } from "../types";
 import { anchorKey } from "./anchor";
 
-export interface PendingNode { id: string; parentId: string; question: string; error?: string; anchor?: Anchor }
+export interface PendingNode { id: string; parentId: string; question: string; error?: string; anchor?: Anchor; activity?: string }
 export interface DraftNode { id: string; parentId: string; anchor: Anchor }
 
 export interface CanvasNode {
@@ -14,9 +14,14 @@ export interface CanvasNode {
   anchor?: Anchor;
   anchors?: Anchor[]; // distinct anchors of this node's children (real + pending + draft), for span highlighting
   parentId?: string; // set on pending/draft nodes so the UI can recover the parent (e.g. for retry)
+  activity?: string; // latest live-activity line on a pending node
   body?: string;
   sources?: string[];
   childCount?: number; // findings that branch directly off this node (used for the topic card meta)
+  tokens?: number; // total tokens this node's Claude call consumed
+  costUsd?: number; // USD cost of that call
+  teaser?: string; // a thread's one-line "why" (collapsed signpost)
+  researched?: boolean; // false on an unresearched thread; true once it has a real body
   error?: string;
   position?: Position;
 }
@@ -72,6 +77,10 @@ export function buildCanvas(input: {
     if (bodies[m.id] !== undefined) node.body = bodies[m.id];
     if (sources[m.id] !== undefined) node.sources = sources[m.id];
     if (m.kind === "topic") node.childCount = childCount.get(m.id) ?? 0;
+    if (m.tokens !== undefined) node.tokens = m.tokens;
+    if (m.costUsd !== undefined) node.costUsd = m.costUsd;
+    if (m.teaser !== undefined) node.teaser = m.teaser;
+    if (m.researched !== undefined) node.researched = m.researched;
     if (positions[m.id]) node.position = positions[m.id];
     nodes.push(node);
     for (const p of m.parents) {
@@ -87,6 +96,7 @@ export function buildCanvas(input: {
     if (!(visible.has(pn.parentId) && expanded.has(pn.parentId))) continue;
     const node: CanvasNode = { id: pn.id, kind: "finding", title: pn.question, expanded: false, pending: true, parentId: pn.parentId };
     if (pn.error) node.error = pn.error;
+    if (pn.activity) node.activity = pn.activity;
     if (pn.anchor) node.anchor = pn.anchor;
     if (positions[pn.id]) node.position = positions[pn.id];
     nodes.push(node);

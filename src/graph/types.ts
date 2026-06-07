@@ -24,6 +24,10 @@ export interface ResearchNode {
   created: string; // ISO 8601
   body: string; // markdown answer (the topic node's body is "")
   position?: Position; // last-saved canvas coordinates (absent until the user drags it)
+  tokens?: number; // total tokens this node's Claude call consumed (topic = the initial research run)
+  costUsd?: number; // USD cost of that same call
+  teaser?: string; // a thread's one-line "why", shown on the collapsed signpost (unresearched threads)
+  researched?: boolean; // false on an unresearched thread; true once it has a real body
 }
 
 /** Lightweight per-node metadata stored in the index (everything reconstructable from .md files). */
@@ -35,6 +39,10 @@ export interface NodeMeta {
   question: string;
   created: string;
   position?: Position; // mirrors the node's saved canvas coordinates
+  tokens?: number; // mirrors the node's token total
+  costUsd?: number; // mirrors the node's USD cost
+  teaser?: string; // mirrors the node's thread teaser ("why")
+  researched?: boolean; // mirrors the node's researched flag
 }
 
 /** Derived, rebuildable index for fast project loading. Source of truth is the .md frontmatter. */

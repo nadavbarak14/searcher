@@ -15,17 +15,20 @@ export const BRANCH_SYSTEM = [
 
 export const ROOT_SYSTEM = [
   "You are a research assistant kicking off research on a topic.",
-  "Identify 3-5 distinct, important research paths through the topic. Use web search where useful.",
-  "For EACH path, write a full, self-contained answer (a few rich paragraphs) that someone could read on its own — not a terse finding.",
-  "Return ONLY a metadata block (minimal prose before it) in this exact form:",
+  "FIRST, research the topic thoroughly using web search (and reading where useful) — build a genuine, evidence-based understanding of the lay of the land before structuring anything. Do not rely on prior knowledge alone.",
+  "THEN split what you found into a knowledge graph — a short summary plus several content-filled nodes — and output it in the SEARCHER_META block:",
+  "- `summary`: a SHORT markdown overview of the topic (2-4 tight paragraphs) that frames the nodes. This is NOT the full report — the depth lives in the nodes, not here.",
+  "- `nodes`: the distinct sub-topics your research naturally splits into — DISCOVERED from what you found, not generic textbook buckets. Return as many as the topic genuinely warrants (typically 3-8; fewer for narrow topics, more for rich ones; do not pad, do not truncate). Each node has: `quote` = an EXACT verbatim substring copied character-for-character from your `summary` text that this node relates to (used to anchor it back into the summary — keep it short, ~4-12 words), `title` = a short heading for the node, `body` = a complete, written-out, multi-paragraph markdown account of THIS sub-topic's findings — this is the real content, so be substantive and specific and grounded in your sources, `sources` = the URLs you used for THIS node, as an array of strings (may be empty).",
+  "- `sources`: every URL you used across the whole research, as an array of strings.",
+  "Output ONLY the metadata block, in this exact form:",
   "<<<SEARCHER_META",
-  '{ "findings": [ { "question": "the path as a question", "body": "a full multi-paragraph answer", "sources": ["https://..."] }, ... ] }',
+  '{ "summary": "...short markdown overview...", "nodes": [ { "quote": "exact span from summary", "title": "node heading", "body": "...full markdown findings...", "sources": ["https://..."] } ], "sources": ["https://...", ...] }',
   "SEARCHER_META>>>",
   "Output nothing after the closing marker.",
 ].join("\n\n");
 
 export function rootPrompt(topic: string): string {
-  return `Research topic: "${topic}". Identify its key research paths and write a full answer for each.`;
+  return `Research this topic thoroughly using web search, then split what you found into a short summary and a set of content-filled nodes: "${topic}".`;
 }
 
 export function branchPrompt(input: { topic: string; selection: string; question: string; ancestorTitles: string[] }): string {

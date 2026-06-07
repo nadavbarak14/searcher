@@ -15,6 +15,7 @@ export function App() {
   const [view, setView] = useState<View>({ name: "home" });
   const [index, setIndex] = useState<GraphIndex | null>(null);
   const [report, setReport] = useState<ReportState | null>(null);
+  const [activity, setActivity] = useState<string[]>([]);
 
   const projectId = view.name === "canvas" ? view.projectId : null;
   const reload = useCallback(async (id: string) => setIndex(await api.getProject(id)), []);
@@ -24,9 +25,10 @@ export function App() {
 
   const start = useCallback(async (topic: string) => {
     setIndex(null);
+    setActivity([]);
     setView({ name: "loading", topic });
     try {
-      const { projectId } = await api.createTopic(topic);
+      const { projectId } = await api.createTopic(topic, (e) => setActivity((a) => [...a, e.label]));
       setView({ name: "canvas", projectId });
     } catch (e) {
       setView({ name: "loading", topic, error: e instanceof Error ? e.message : String(e) });
@@ -59,7 +61,7 @@ export function App() {
   if (view.name === "loading") {
     return (
       <div className="app">
-        <LoadingCanvas topic={view.topic} error={view.error} onRetry={() => void start(view.topic)} onHome={home} />
+        <LoadingCanvas topic={view.topic} error={view.error} activity={activity} onRetry={() => void start(view.topic)} onHome={home} />
       </div>
     );
   }

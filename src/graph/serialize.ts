@@ -9,6 +9,10 @@ interface FrontMatter {
   sources: string[];
   created: string;
   position?: Position;
+  tokens?: number;
+  costUsd?: number;
+  teaser?: string;
+  researched?: boolean;
 }
 
 function assertFrontMatter(id: string, fm: Partial<FrontMatter>): asserts fm is FrontMatter {
@@ -34,6 +38,10 @@ export function nodeToMarkdown(node: ResearchNode): string {
   };
   if (node.anchor) data.anchor = node.anchor;
   if (node.position) data.position = node.position;
+  if (node.tokens !== undefined) data.tokens = node.tokens;
+  if (node.costUsd !== undefined) data.costUsd = node.costUsd;
+  if (node.teaser !== undefined) data.teaser = node.teaser;
+  if (node.researched !== undefined) data.researched = node.researched;
   // gray-matter appends a trailing newline to the body; keep body verbatim.
   return matter.stringify(node.body, data);
 }
@@ -57,5 +65,9 @@ export function markdownToNode(id: string, md: string): ResearchNode {
   };
   if (fm.anchor) node.anchor = fm.anchor;
   if (fm.position) node.position = fm.position;
+  if (fm.tokens !== undefined) node.tokens = fm.tokens;
+  if (fm.costUsd !== undefined) node.costUsd = fm.costUsd;
+  if (fm.teaser !== undefined) node.teaser = fm.teaser;
+  if (fm.researched !== undefined) node.researched = fm.researched;
   return node;
 }

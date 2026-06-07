@@ -5,6 +5,25 @@ import type { Anchor } from "../types";
 import { anchorFromSelection, anchorKey } from "../graph/anchor";
 import { highlightSegments } from "../graph/highlight";
 
+/** Compact token count: 1234 → "1.2k", 12345 → "12k", 999 → "999". */
+function formatTokens(n: number): string {
+  if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, "") + "k";
+  return String(n);
+}
+
+/** A small, muted "≈ Nk tokens" caption shown in a card's meta area. */
+function TokenBadge({ tokens, costUsd }: { tokens?: number; costUsd?: number }) {
+  if (tokens === undefined || tokens <= 0) return null;
+  const title = costUsd !== undefined
+    ? `${tokens.toLocaleString()} tokens · $${costUsd.toFixed(3)}`
+    : `${tokens.toLocaleString()} tokens`;
+  return (
+    <span className="mono" title={title} style={{ fontSize: 11, color: "var(--muted)" }}>
+      ≈ {formatTokens(tokens)} tokens
+    </span>
+  );
+}
+
 // char offset of a node/offset pair within container.textContent
 function offsetWithin(container: HTMLElement, node: Node, nodeOffset: number): number {
   let total = 0;
@@ -25,7 +44,13 @@ export interface CardData {
   body?: string;
   sources?: string[];
   childCount?: number; // direct findings, for the topic card meta line
+  tokens?: number;     // total tokens this node's Claude call consumed
+  costUsd?: number;    // USD cost of that call (shown in the badge tooltip)
+  teaser?: string;     // a thread's one-line "why" (collapsed signpost)
+  researched?: boolean; // false on an unresearched thread (signpost only)
+  researching?: boolean; // true while this thread is being researched in place
   error?: string;
+  activity?: string; // latest live-activity line, shown under "Thinking…" on a pending node
   onToggle: () => void; // expand/collapse (also triggers lazy body fetch)
   onAsk: (question: string) => void; // branch a follow-up question off this node
   onRetry?: () => void; // present on errored pending nodes
@@ -267,6 +292,30 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
     setSel({ anchor, top: (r.bottom - cardRect.top) / z + 6, left: (r.left - cardRect.left) / z });
   };
 
+  // Shared rendered body: split into <mark data-akey> spans for anchored substrings, else plain text.
+  const renderBody = (body?: string) =>
+    (body && d.anchors?.length)
+      ? highlightSegments(body, d.anchors).map((seg, i) =>
+          seg.keys.length
+            ? <mark key={i} data-akey={seg.keys.join(" ")} className="anchor-mark">{seg.text}</mark>
+            : <span key={i}>{seg.text}</span>)
+      : body;
+
+  // The per-anchor source handles (so child edges pin to their quoted span). Shared by topic + finding.
+  const anchorHandles = d.expanded && d.anchors?.map((a) => {
+    const key = anchorKey(a);
+    return <Handle key={key} id={key} type="source" position={RFPosition.Right} style={{ top: markTops[key] ?? "50%" }} />;
+  });
+
+  // The selection → follow-up button (shared by topic report + finding body).
+  const followUpButton = sel && d.onFollowUp && (
+    <button className="btn btn-primary btn-sm nodrag" style={{ position: "absolute", top: sel.top, left: sel.left, zIndex: 5, boxShadow: "var(--shadow-md)" }}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => { d.onFollowUp!(sel.anchor); window.getSelection()?.removeAllRanges(); setSel(null); }}>
+      <Icon name="branch" size={13} /> Follow up
+    </button>
+  );
+
   // ---- draft compose node ----
   if (d.draft) {
     return <DraftCard anchorText={d.anchorText ?? ""} onSubmit={d.onDraftSubmit!} onCancel={d.onDraftCancel!} />;
@@ -301,6 +350,14 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
           )}
         </div>
         <div className="serif" style={{ fontSize: 15.5, lineHeight: 1.32, color: "var(--ink-soft)" }}>{d.title}</div>
+        {!d.error && d.activity && (
+          <div
+            className="mono"
+            style={{ marginTop: 9, fontSize: 11, lineHeight: 1.4, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          >
+            {d.activity}
+          </div>
+        )}
         {d.error && (
           <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ flex: 1, fontSize: 12, color: "var(--danger)" }}>{d.error}</span>
@@ -317,12 +374,16 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
     );
   }
 
-  // ---- topic (root) node ----
+  // ---- topic (root) node — renders the research report (body) like an expanded finding ----
   if (isTopic) {
     return (
       <div
+        ref={cardRef}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
         style={{
-          width: 340,
+          position: "relative",
+          width: 388,
           background: "var(--clay-soft)",
           borderRadius: "var(--r-lg)",
           border: "1.5px solid var(--clay)",
@@ -338,23 +399,37 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
         <h2 className="serif" style={{ fontSize: 21, fontWeight: 500, lineHeight: 1.22, letterSpacing: "-0.01em", margin: 0, color: "var(--ink)", textWrap: "balance" }}>
           {d.title}
         </h2>
-        <div className="mono" style={{ fontSize: 11, color: "var(--ink-soft)", marginTop: 12 }}>
-          {d.childCount ?? 0} {d.childCount === 1 ? "FINDING" : "FINDINGS"}&nbsp;·&nbsp;DEEP PASS COMPLETE
+
+        {/* research report */}
+        <div
+          ref={bodyRef}
+          onMouseUp={onBodyMouseUp}
+          onScroll={() => setScrollTick((t) => t + 1)}
+          data-scroll={scrollTick}
+          className="nodrag nopan nowheel serif"
+          style={{ marginTop: 14, fontSize: 14.5, lineHeight: 1.6, color: "var(--ink-soft)", maxHeight: 300, overflow: "auto", whiteSpace: "pre-wrap", userSelect: "text", WebkitUserSelect: "text", cursor: "text" }}
+        >
+          {d.body === undefined
+            ? <span className="mono" style={{ color: "var(--faint)" }}>Loading…</span>
+            : (d.body ? renderBody(d.body) : <span className="mono" style={{ color: "var(--faint)" }}>(no report)</span>)}
+        </div>
+
+        <div className="mono" style={{ fontSize: 11, color: "var(--ink-soft)", marginTop: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span>{d.childCount ?? 0} {d.childCount === 1 ? "THREAD" : "THREADS"}</span>
+          <TokenBadge tokens={d.tokens} costUsd={d.costUsd} />
         </div>
         <AskBox onAsk={d.onAsk} />
+
+        {followUpButton}
         <Handle type="source" position={RFPosition.Right} />
+        {anchorHandles}
       </div>
     );
   }
 
   // ---- finding node (collapsed / expanded) ----
   const width = d.expanded ? 384 : 268;
-  const bodyContent = (d.body && d.anchors?.length)
-    ? highlightSegments(d.body, d.anchors).map((seg, i) =>
-        seg.keys.length
-          ? <mark key={i} data-akey={seg.keys.join(" ")} className="anchor-mark">{seg.text}</mark>
-          : <span key={i}>{seg.text}</span>)
-    : d.body;
+  const bodyContent = renderBody(d.body);
   return (
     <div
       ref={cardRef}
@@ -399,54 +474,81 @@ function ResearchNodeCardImpl({ data }: NodeProps) {
         >
           <Icon name="chevron" size={17} />
         </span>
-        <span className="serif" style={{ flex: 1, fontSize: 15.5, lineHeight: 1.3, fontWeight: 500, color: "var(--ink)", letterSpacing: "-0.005em" }}>
-          {d.title}
+        <span style={{ flex: 1 }}>
+          <span className="serif" style={{ display: "block", fontSize: 15.5, lineHeight: 1.3, fontWeight: 500, color: "var(--ink)", letterSpacing: "-0.005em" }}>
+            {d.title}
+          </span>
+          {!d.expanded && d.teaser && (
+            <span
+              style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden", marginTop: 5, fontSize: 12.5, lineHeight: 1.4, color: "var(--muted)" }}
+            >
+              {d.teaser}
+            </span>
+          )}
         </span>
       </div>
 
       {/* collapsed meta */}
       {!d.expanded && (
-        <div className="mono" style={{ display: "flex", gap: 12, padding: "0 16px 13px 43px", fontSize: 10.5, color: "var(--muted)" }}>
-          <span>{(d.sources?.length ?? 0)} SRC</span>
-          <span>FINDING</span>
+        <div className="mono" style={{ display: "flex", gap: 12, alignItems: "center", padding: "0 16px 13px 43px", fontSize: 10.5, color: "var(--muted)" }}>
+          {d.researched === false ? (
+            <span>CLICK TO RESEARCH</span>
+          ) : (
+            <>
+              <span>{(d.sources?.length ?? 0)} SRC</span>
+              <span>FINDING</span>
+            </>
+          )}
+          <TokenBadge tokens={d.tokens} costUsd={d.costUsd} />
         </div>
       )}
 
       {/* expanded body */}
       {d.expanded && (
         <div style={{ padding: "16px 18px 18px" }}>
-          <div
-            ref={bodyRef}
-            onMouseUp={onBodyMouseUp}
-            onScroll={() => setScrollTick((t) => t + 1)}
-            data-scroll={scrollTick}
-            // nodrag: don't drag the node · nopan: don't pan the pane · nowheel: scroll the body instead of zooming
-            className="nodrag nopan nowheel serif"
-            // RF sets user-select:none on .react-flow__node; re-enable it so text is selectable for Follow-up
-            style={{ fontSize: 15, lineHeight: 1.62, color: "var(--ink-soft)", maxHeight: 260, overflow: "auto", whiteSpace: "pre-wrap", userSelect: "text", WebkitUserSelect: "text", cursor: "text" }}
-          >
-            {d.body === undefined
-              ? <span className="mono" style={{ color: "var(--faint)" }}>Loading…</span>
-              : (d.body ? bodyContent : <span className="mono" style={{ color: "var(--faint)" }}>(no text)</span>)}
-          </div>
-          <SourceList sources={d.sources} />
-          <AskBox onAsk={d.onAsk} />
+          {d.researching && !d.body ? (
+            <div>
+              <div className="eyebrow" style={{ color: "var(--clay)", marginBottom: 10, display: "flex", gap: 8, alignItems: "center" }}>
+                Researching…
+                <span style={{ display: "inline-flex", gap: 4 }}>
+                  {[0, 1, 2].map((i) => (
+                    <span key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--clay)", animation: `breathe 1.4s ease-in-out ${i * 0.18}s infinite` }} />
+                  ))}
+                </span>
+              </div>
+              {d.activity && (
+                <div className="mono" style={{ fontSize: 11, lineHeight: 1.4, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {d.activity}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div
+                ref={bodyRef}
+                onMouseUp={onBodyMouseUp}
+                onScroll={() => setScrollTick((t) => t + 1)}
+                data-scroll={scrollTick}
+                // nodrag: don't drag the node · nopan: don't pan the pane · nowheel: scroll the body instead of zooming
+                className="nodrag nopan nowheel serif"
+                // RF sets user-select:none on .react-flow__node; re-enable it so text is selectable for Follow-up
+                style={{ fontSize: 15, lineHeight: 1.62, color: "var(--ink-soft)", maxHeight: 260, overflow: "auto", whiteSpace: "pre-wrap", userSelect: "text", WebkitUserSelect: "text", cursor: "text" }}
+              >
+                {d.body === undefined
+                  ? <span className="mono" style={{ color: "var(--faint)" }}>{d.error ? d.error : "Loading…"}</span>
+                  : (d.body ? bodyContent : <span className="mono" style={{ color: "var(--faint)" }}>(no text)</span>)}
+              </div>
+              <SourceList sources={d.sources} />
+              <AskBox onAsk={d.onAsk} />
+            </>
+          )}
         </div>
       )}
 
-      {sel && d.onFollowUp && (
-        <button className="btn btn-primary btn-sm nodrag" style={{ position: "absolute", top: sel.top, left: sel.left, zIndex: 5, boxShadow: "var(--shadow-md)" }}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => { d.onFollowUp!(sel.anchor); window.getSelection()?.removeAllRanges(); setSel(null); }}>
-          <Icon name="branch" size={13} /> Follow up
-        </button>
-      )}
+      {followUpButton}
 
       <Handle type="source" position={RFPosition.Right} />{/* default, for unanchored edges */}
-      {d.expanded && d.anchors?.map((a) => {
-        const key = anchorKey(a);
-        return <Handle key={key} id={key} type="source" position={RFPosition.Right} style={{ top: markTops[key] ?? "50%" }} />;
-      })}
+      {anchorHandles}
     </div>
   );
 }

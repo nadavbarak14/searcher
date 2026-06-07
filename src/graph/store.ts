@@ -7,6 +7,10 @@ function metaOf(node: ResearchNode): NodeMeta {
   const meta: NodeMeta = { id: node.id, kind: node.kind, parents: node.parents, question: node.question, created: node.created };
   if (node.anchor) meta.anchor = node.anchor;
   if (node.position) meta.position = node.position;
+  if (node.tokens !== undefined) meta.tokens = node.tokens;
+  if (node.costUsd !== undefined) meta.costUsd = node.costUsd;
+  if (node.teaser !== undefined) meta.teaser = node.teaser;
+  if (node.researched !== undefined) meta.researched = node.researched;
   return meta;
 }
 
@@ -71,6 +75,10 @@ export class GraphStore {
     question: string;
     body: string;
     sources: string[];
+    tokens?: number;
+    costUsd?: number;
+    teaser?: string;
+    researched?: boolean;
   }): Promise<ResearchNode> {
     return this.enqueue(async () => {
       const index = await this.loadIndex();
@@ -85,6 +93,10 @@ export class GraphStore {
         body: input.body,
       };
       if (input.anchor) node.anchor = input.anchor;
+      if (input.tokens !== undefined) node.tokens = input.tokens;
+      if (input.costUsd !== undefined) node.costUsd = input.costUsd;
+      if (input.teaser !== undefined) node.teaser = input.teaser;
+      if (input.researched !== undefined) node.researched = input.researched;
 
       await fs.writeFile(nodePath(this.baseDir, this.projectId, id), nodeToMarkdown(node), "utf8");
       index.nextSeq += 1;
@@ -112,6 +124,56 @@ export class GraphStore {
         meta.position = pos;
       }
       await this.writeIndex(index);
+    });
+  }
+
+  /**
+   * Attach token/cost totals to one node (e.g. the synthetic "topic" node, after the initial
+   * research run). Writes the node .md (source of truth) and mirrors onto the index meta in one
+   * write. Unknown ids are skipped. Race-safe via the write queue.
+   */
+  async setNodeUsage(id: string, usage: { tokens?: number; costUsd?: number }): Promise<void> {
+    return this.enqueue(async () => {
+      const index = await this.loadIndex();
+      const meta = index.nodes.find((m) => m.id === id);
+      if (!meta) return; // unknown id — skip
+      const node = await this.getNode(id);
+      if (usage.tokens !== undefined) {
+        node.tokens = usage.tokens;
+        meta.tokens = usage.tokens;
+      }
+      if (usage.costUsd !== undefined) {
+        node.costUsd = usage.costUsd;
+        meta.costUsd = usage.costUsd;
+      }
+      await fs.writeFile(nodePath(this.baseDir, this.projectId, id), nodeToMarkdown(node), "utf8");
+      await this.writeIndex(index);
+    });
+  }
+
+  /**
+   * Race-safe general patch: apply each defined field onto one node, write the node .md (source of
+   * truth), then mirror the node's metadata onto the index. THROWS on an unknown id.
+   */
+  async updateNode(
+    id: string,
+    patch: { body?: string; sources?: string[]; tokens?: number; costUsd?: number; teaser?: string; researched?: boolean },
+  ): Promise<ResearchNode> {
+    return this.enqueue(async () => {
+      const index = await this.loadIndex();
+      const meta = index.nodes.find((m) => m.id === id);
+      if (!meta) throw new Error(`unknown node ${id}`);
+      const node = await this.getNode(id);
+      if (patch.body !== undefined) node.body = patch.body;
+      if (patch.sources !== undefined) node.sources = patch.sources;
+      if (patch.tokens !== undefined) node.tokens = patch.tokens;
+      if (patch.costUsd !== undefined) node.costUsd = patch.costUsd;
+      if (patch.teaser !== undefined) node.teaser = patch.teaser;
+      if (patch.researched !== undefined) node.researched = patch.researched;
+      await fs.writeFile(nodePath(this.baseDir, this.projectId, id), nodeToMarkdown(node), "utf8");
+      Object.assign(meta, metaOf(node));
+      await this.writeIndex(index);
+      return node;
     });
   }
 

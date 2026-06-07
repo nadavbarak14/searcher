@@ -64,6 +64,32 @@ describe("serialize", () => {
     expect(parsed.position).toBeUndefined();
   });
 
+  it("round-trips tokens and costUsd through frontmatter", () => {
+    const n = { ...node, tokens: 12345, costUsd: 0.0421 };
+    const parsed = markdownToNode("n_1", nodeToMarkdown(n));
+    expect(parsed.tokens).toBe(12345);
+    expect(parsed.costUsd).toBe(0.0421);
+  });
+
+  it("omits tokens/costUsd when absent", () => {
+    const parsed = markdownToNode("n_1", nodeToMarkdown(node));
+    expect(parsed.tokens).toBeUndefined();
+    expect(parsed.costUsd).toBeUndefined();
+  });
+
+  it("round-trips teaser and researched through frontmatter", () => {
+    const n = { ...node, teaser: "why it's interesting", researched: false };
+    const parsed = markdownToNode("n_1", nodeToMarkdown(n));
+    expect(parsed.teaser).toBe("why it's interesting");
+    expect(parsed.researched).toBe(false);
+  });
+
+  it("omits teaser/researched when absent", () => {
+    const parsed = markdownToNode("n_1", nodeToMarkdown(node));
+    expect(parsed.teaser).toBeUndefined();
+    expect(parsed.researched).toBeUndefined();
+  });
+
   it("round-trips multiple sources", () => {
     const n = { ...node, sources: ["https://a.test", "https://b.test", "https://c.test"] };
     const parsed = markdownToNode("n_1", nodeToMarkdown(n));
