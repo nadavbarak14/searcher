@@ -48,10 +48,12 @@ export function useReadAloud(getContainer: () => HTMLElement | null): ReadAloud 
   const idxRef = useRef(0);
   const rateRef = useRef(1);
   const genRef = useRef(0); // bumped on any interruption to invalidate stale utterance callbacks
+  const playingRef = useRef(false); // synchronous source of truth: are we actively advancing?
 
   const speakFrom = useCallback((i: number) => {
     const units = unitsRef.current;
     if (i >= units.length) {
+      playingRef.current = false;
       setStatus("idle");
       setActive(null);
       idxRef.current = 0;
@@ -65,7 +67,7 @@ export function useReadAloud(getContainer: () => HTMLElement | null): ReadAloud 
     setActive({ block: u.block, sentence: { start: u.start, end: u.end }, word: null });
     utter.onboundary = (e: SpeechSynthesisEvent) => {
       if (genRef.current !== gen) return;
-      if (e.name && e.name !== "word") return;
+      if (e.name !== "word") return;
       const abs = u.start + e.charIndex;
       const len = e.charLength;
       const word = len && len > 0
@@ -74,7 +76,9 @@ export function useReadAloud(getContainer: () => HTMLElement | null): ReadAloud 
       setActive({ block: u.block, sentence: { start: u.start, end: u.end }, word });
     };
     utter.onend = () => {
-      if (genRef.current !== gen) return;
+      // genRef invalidates a cancelled utterance; playingRef stops us advancing while
+      // paused (Chrome can fire onend on an utterance that ends just as the user pauses).
+      if (genRef.current !== gen || !playingRef.current) return;
       speakFrom(i + 1);
     };
     window.speechSynthesis.speak(utter);
@@ -88,18 +92,21 @@ export function useReadAloud(getContainer: () => HTMLElement | null): ReadAloud 
     window.speechSynthesis.cancel();
     unitsRef.current = buildUnits(container);
     if (!unitsRef.current.length) return;
+    playingRef.current = true;
     setStatus("playing");
     speakFrom(0);
   }, [getContainer, speakFrom]);
 
   const pause = useCallback(() => {
     if (!SPEECH_OK) return;
+    playingRef.current = false;
     window.speechSynthesis.pause();
     setStatus("paused");
   }, []);
 
   const resume = useCallback(() => {
     if (!SPEECH_OK) return;
+    playingRef.current = true;
     window.speechSynthesis.resume();
     setStatus("playing");
   }, []);
@@ -109,6 +116,7 @@ export function useReadAloud(getContainer: () => HTMLElement | null): ReadAloud 
       genRef.current++;
       window.speechSynthesis.cancel();
     }
+    playingRef.current = false;
     idxRef.current = 0;
     setStatus("idle");
     setActive(null);
@@ -117,14 +125,14 @@ export function useReadAloud(getContainer: () => HTMLElement | null): ReadAloud 
   const setRate = useCallback((r: number) => {
     rateRef.current = r;
     setRateState(r);
-    // rate can't change a live utterance — restart the current sentence at the new rate
-    if (SPEECH_OK && status !== "idle") {
+    // Rate can't change a live utterance. If playing, restart the current sentence at the
+    // new rate; if paused, the new rate simply applies to subsequent sentences.
+    if (SPEECH_OK && playingRef.current) {
       genRef.current++;
       window.speechSynthesis.cancel();
-      setStatus("playing");
       speakFrom(idxRef.current);
     }
-  }, [status, speakFrom]);
+  }, [speakFrom]);
 
   // Cleanup on unmount. SidePanel is keyed by node id, so this also fires on node change.
   useEffect(() => () => { if (SPEECH_OK) window.speechSynthesis.cancel(); }, []);
