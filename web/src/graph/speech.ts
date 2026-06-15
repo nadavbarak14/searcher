@@ -15,7 +15,11 @@ function pushTrimmed(spans: Span[], text: string, s: number, e: number): void {
  */
 export function segmentSentences(text: string): Span[] {
   const spans: Span[] = [];
-  const re = /[.!?]+(?=\s+["'"([A-Z]|\s*$)/g;
+  // Sentence ends at .!? (plus an optional closing quote/bracket), when followed by
+  // whitespace + the start of a new sentence — an opening quote/paren or a capital —
+  // or by end of string. Opening set covers ASCII and curly quotes (markdown content
+  // uses curly quotes); lowercase abbreviations (e.g., i.e.) are deliberately not split.
+  const re = /[.!?]+["'”’)\]]?(?=\s+["'“‘([A-Z]|\s*$)/g;
   let start = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {

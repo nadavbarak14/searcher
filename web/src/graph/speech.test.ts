@@ -32,6 +32,17 @@ describe("segmentSentences", () => {
   it("returns [] for empty string", () => {
     expect(segmentSentences("")).toEqual([]);
   });
+
+  it("splits around curly quotes (opening and closing)", () => {
+    expect(segmentSentences("A cat sat. “Then it ran.”")).toEqual([
+      { start: 0, end: 10 },
+      { start: 11, end: 25 },
+    ]);
+  });
+
+  it("returns [] for whitespace-only text", () => {
+    expect(segmentSentences("   ")).toEqual([]);
+  });
 });
 
 describe("wordRangeAt", () => {

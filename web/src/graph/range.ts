@@ -2,6 +2,7 @@
  * Given the char lengths of a container's successive text nodes and a target
  * char offset, return which text node holds it and the local offset within
  * that node. Offsets past the end clamp to the end of the last node. Pure.
+ * Returns { index: 0, local: 0 } for an empty list — callers must guard before indexing the original array.
  */
 export function findNodeAtOffset(lengths: number[], offset: number): { index: number; local: number } {
   if (!lengths.length) return { index: 0, local: 0 };
@@ -14,7 +15,7 @@ export function findNodeAtOffset(lengths: number[], offset: number): { index: nu
   return { index: last, local: lengths[last] };
 }
 
-/** Char offset of (node, nodeOffset) within container.textContent. DOM glue. */
+/** Char offset of (node, nodeOffset) within container.textContent. DOM glue. Assumes `node` is a descendant of `container` (callers guard with container.contains); if absent, returns the total text length. */
 export function offsetWithin(container: HTMLElement, node: Node, nodeOffset: number): number {
   let total = 0;
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
