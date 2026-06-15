@@ -4,24 +4,14 @@ import type { Anchor } from "../types";
 import type { CanvasNode, ChildLink } from "../graph/model";
 import { anchorKey, anchorFromSelection } from "../graph/anchor";
 import { renderMarkdown } from "../graph/markdown";
+import { offsetWithin, rangeWithin } from "../graph/range";
+import { useReadAloud, type ReadAloud } from "../useReadAloud";
 import { Icon } from "./ui";
 
 /** Compact token count: 1234 → "1.2k". */
 function formatTokens(n: number): string {
   if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, "") + "k";
   return String(n);
-}
-
-// char offset of a node/offset pair within container.textContent
-function offsetWithin(container: HTMLElement, node: Node, nodeOffset: number): number {
-  let total = 0;
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  let n: Node | null;
-  while ((n = walker.nextNode())) {
-    if (n === node) return total + nodeOffset;
-    total += (n.textContent ?? "").length;
-  }
-  return total;
 }
 
 function SourceList({ sources }: { sources?: string[] }) {
@@ -73,6 +63,34 @@ function AskBox({ anchorText, onAsk, onCancel }: { anchorText?: string; onAsk: (
         <button className="btn btn-ghost btn-sm" onClick={close}>Cancel</button>
         <button className="btn btn-primary btn-sm" disabled={!draft.trim()} onClick={submit}><Icon name="sparkle" size={14} /> Ask</button>
       </div>
+    </div>
+  );
+}
+
+const SPEEDS = [1, 1.25, 1.5, 2, 0.75];
+
+/** Transport for read-aloud: Listen → (pause/resume, stop, speed). */
+function ReadAloudBar({ tts }: { tts: ReadAloud }) {
+  const playing = tts.status === "playing";
+  if (tts.status === "idle") {
+    return (
+      <button className="iconbtn bare accent nodrag" title="Read aloud" onClick={tts.play}
+        style={{ width: "auto", padding: "0 9px", gap: 6, display: "inline-flex", alignItems: "center", fontFamily: "var(--sans)", fontSize: 12.5 }}>
+        <Icon name="headphones" size={15} /> Listen
+      </button>
+    );
+  }
+  return (
+    <div className="nodrag" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <button className="iconbtn bare" title={playing ? "Pause" : "Resume"} onClick={playing ? tts.pause : tts.resume}>
+        <Icon name={playing ? "pause" : "play"} size={15} />
+      </button>
+      <button className="iconbtn bare" title="Stop" onClick={tts.stop}><Icon name="stop" size={15} /></button>
+      <button className="chip" title="Playback speed"
+        onClick={() => tts.setRate(SPEEDS[(SPEEDS.indexOf(tts.rate) + 1) % SPEEDS.length])}
+        style={{ fontSize: 11.5, padding: "3px 8px" }}>
+        {tts.rate}×
+      </button>
     </div>
   );
 }
@@ -130,6 +148,54 @@ export function SidePanel({ node, body, sources, childLinks, pendingChildren, re
   const [popover, setPopover] = useState<{ link: ChildLink; x: number; y: number } | null>(null);
   const [sel, setSel] = useState<{ anchor: Anchor; x: number; y: number } | null>(null);
   const [askAnchor, setAskAnchor] = useState<Anchor | null>(null);
+  const tts = useReadAloud(() => bodyRef.current);
+  const lastSentRef = useRef<string>("");
+  const lastBlockRef = useRef<HTMLElement | null>(null);
+
+  // Paint the active sentence/word via the CSS Custom Highlight API (no DOM mutation),
+  // falling back to a class band. Scroll only when the sentence (not the word) changes.
+  useEffect(() => {
+    const w = window as unknown as {
+      CSS?: { highlights?: Map<string, unknown> };
+      Highlight?: new (...ranges: Range[]) => unknown;
+    };
+    const hasHL = !!(w.CSS && w.CSS.highlights && typeof w.Highlight === "function");
+    const a = tts.active;
+
+    if (!hasHL) {
+      document.querySelectorAll(".tts-block-active").forEach((el) => el.classList.remove("tts-block-active"));
+      if (a) a.block.classList.add("tts-block-active");
+      return;
+    }
+    const highlights = w.CSS!.highlights!;
+    const Highlight = w.Highlight!;
+    if (!a) {
+      highlights.delete("tts-sentence");
+      highlights.delete("tts-word");
+      return;
+    }
+    highlights.set("tts-sentence", new Highlight(rangeWithin(a.block, a.sentence.start, a.sentence.end)));
+    if (a.word) highlights.set("tts-word", new Highlight(rangeWithin(a.block, a.word.start, a.word.end)));
+    else highlights.delete("tts-word");
+
+    const sentKey = `${a.sentence.start}-${a.sentence.end}`;
+    if (a.block !== lastBlockRef.current || sentKey !== lastSentRef.current) {
+      lastBlockRef.current = a.block;
+      lastSentRef.current = sentKey;
+      a.block.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [tts.active]);
+
+  // Stop speech (and clear highlights via the effect above) if the body content changes.
+  useEffect(() => { tts.stop(); }, [body]);
+
+  // Clear highlights on unmount.
+  useEffect(() => () => {
+    const w = window as unknown as { CSS?: { highlights?: Map<string, unknown> } };
+    w.CSS?.highlights?.delete("tts-sentence");
+    w.CSS?.highlights?.delete("tts-word");
+    document.querySelectorAll(".tts-block-active").forEach((el) => el.classList.remove("tts-block-active"));
+  }, []);
 
   const linkByKey = useMemo(() => {
     const m = new Map<string, ChildLink>();
@@ -194,6 +260,7 @@ export function SidePanel({ node, body, sources, childLinks, pendingChildren, re
             {node.tokens && node.tokens > 0 ? <span title={node.costUsd !== undefined ? `${node.tokens.toLocaleString()} tokens · $${node.costUsd.toFixed(3)}` : `${node.tokens.toLocaleString()} tokens`}>≈ {formatTokens(node.tokens)} tokens</span> : null}
           </div>
         </div>
+        {tts.supported && body && !researching && <ReadAloudBar tts={tts} />}
         <button className="iconbtn bare" title="Close" onClick={onClose} style={{ flexShrink: 0 }}><Icon name="x" size={16} /></button>
       </div>
 
