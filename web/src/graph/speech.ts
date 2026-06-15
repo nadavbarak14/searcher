@@ -26,3 +26,15 @@ export function segmentSentences(text: string): Span[] {
   if (start < text.length) pushTrimmed(spans, text, start, text.length);
   return spans;
 }
+
+const WS = /\s/;
+
+/** The whitespace-delimited word covering `index`; empty range if on whitespace or out of bounds. */
+export function wordRangeAt(text: string, index: number): Span {
+  if (index < 0 || index >= text.length || WS.test(text[index])) return { start: index, end: index };
+  let s = index;
+  let e = index + 1;
+  while (s > 0 && !WS.test(text[s - 1])) s--;
+  while (e < text.length && !WS.test(text[e])) e++;
+  return { start: s, end: e };
+}
