@@ -70,12 +70,18 @@ unit-tested logic in `web/src/graph/*` with thin DOM/React glue around it.
      events report a start index but omit word length.
 
 2. **`web/src/graph/range.ts`**
+   - `findNodeAtOffset(lengths: number[], offset: number): { index: number;
+     local: number }` — **pure**, node-testable: given the char lengths of a
+     container's successive text nodes and a target char offset, return which
+     text node holds it and the local offset within that node (clamped to the
+     last node). This is the tricky index math, extracted so it can be unit
+     tested without a DOM.
    - `rangeWithin(container: HTMLElement, start: number, end: number): Range` —
-     build a DOM `Range` from char offsets via a `TreeWalker` over text nodes
-     (inverse of `offsetWithin`).
+     thin DOM glue: collect the container's text nodes + lengths, use
+     `findNodeAtOffset` for both ends, build a `Range`.
    - `offsetWithin(container, node, nodeOffset): number` — moved here from
      `SidePanel` so both directions of the mapping live together and are reused
-     by both the anchor flow and TTS.
+     by both the anchor flow and TTS. Thin DOM glue.
 
 3. **`web/src/useReadAloud.ts`** (hook) — orchestration over
    `window.speechSynthesis`.
@@ -127,11 +133,19 @@ unit-tested logic in `web/src/graph/*` with thin DOM/React glue around it.
 
 ## Testing
 
+The test runner is vitest in the **node** environment (no jsdom). Following the
+codebase's existing split, only pure logic is unit-tested; DOM-touching code is
+thin, typecheck-verified glue (the existing `offsetWithin` in `SidePanel` is
+likewise untested).
+
 - Unit tests for `speech.ts`: sentence segmentation (abbreviations, trailing text
-  with no terminal punctuation, multiple punctuation marks) and `wordRangeAt`.
-- Unit tests for `range.ts`: `offsetWithin` ↔ `rangeWithin` round-trip.
-- Matches the existing `web/src/graph/*.test.ts` style. Hook and DOM glue stay
-  thin because the logic lives in the pure modules.
+  with no terminal punctuation, multiple punctuation marks, empty string) and
+  `wordRangeAt`.
+- Unit tests for `range.ts`: `findNodeAtOffset` pure index math (offset inside
+  first node, spanning into a later node, past the end → clamped, empty list).
+- `rangeWithin` / `offsetWithin` (DOM glue) and the hook are verified by
+  typecheck and manual run, not unit tests — consistent with the existing
+  untested DOM helpers.
 
 ## Out of scope (YAGNI)
 
