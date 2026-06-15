@@ -72,6 +72,10 @@ const SPEEDS = [1, 1.25, 1.5, 2, 0.75];
 /** Transport for read-aloud: Listen → (pause/resume, stop, speed). */
 function ReadAloudBar({ tts }: { tts: ReadAloud }) {
   const playing = tts.status === "playing";
+  const cycleSpeed = () => {
+    const i = SPEEDS.indexOf(tts.rate);
+    tts.setRate(SPEEDS[(i < 0 ? 0 : i + 1) % SPEEDS.length]);
+  };
   if (tts.status === "idle") {
     return (
       <button className="iconbtn bare accent nodrag" title="Read aloud" onClick={tts.play}
@@ -86,8 +90,7 @@ function ReadAloudBar({ tts }: { tts: ReadAloud }) {
         <Icon name={playing ? "pause" : "play"} size={15} />
       </button>
       <button className="iconbtn bare" title="Stop" onClick={tts.stop}><Icon name="stop" size={15} /></button>
-      <button className="chip" title="Playback speed"
-        onClick={() => tts.setRate(SPEEDS[(SPEEDS.indexOf(tts.rate) + 1) % SPEEDS.length])}
+      <button className="chip" title="Playback speed" onClick={cycleSpeed}
         style={{ fontSize: 11.5, padding: "3px 8px" }}>
         {tts.rate}×
       </button>
@@ -182,12 +185,13 @@ export function SidePanel({ node, body, sources, childLinks, pendingChildren, re
     if (a.block !== lastBlockRef.current || sentKey !== lastSentRef.current) {
       lastBlockRef.current = a.block;
       lastSentRef.current = sentKey;
-      a.block.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      a.block.scrollIntoView({ block: "nearest", behavior: "instant" });
     }
   }, [tts.active]);
 
-  // Stop speech (and clear highlights via the effect above) if the body content changes.
-  useEffect(() => { tts.stop(); }, [body]);
+  // Stop speech (and clear highlights via the effect above) when the body content changes.
+  const { stop: stopReading } = tts;
+  useEffect(() => { if (body !== undefined) stopReading(); }, [body, stopReading]);
 
   // Clear highlights on unmount.
   useEffect(() => () => {
