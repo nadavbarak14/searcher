@@ -26,6 +26,25 @@ function buildUnits(container: HTMLElement): Unit[] {
   return units;
 }
 
+// Names of higher-quality voices across platforms (Chrome's network voices, macOS/iOS, Windows, Android).
+const GOOD_VOICE = /(google|natural|neural|enhanced|premium|siri|samantha|daniel|karen|moira|aria|jenny|libby|sonia|fiona|serena)/i;
+
+/** Best available voice for English content; null lets the browser pick its (often poor) default. */
+function pickVoice(): SpeechSynthesisVoice | null {
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+  const en = voices.filter((v) => /^en/i.test(v.lang));
+  const pool = en.length ? en : voices;
+  // Prefer known good names, then any non-local (network) voice, then en-US, then the first.
+  return (
+    pool.find((v) => GOOD_VOICE.test(v.name)) ||
+    pool.find((v) => v.localService === false) ||
+    pool.find((v) => /en[-_]?US/i.test(v.lang)) ||
+    pool[0] ||
+    null
+  );
+}
+
 export interface ReadAloud {
   supported: boolean;
   status: ReadStatus;
@@ -49,6 +68,7 @@ export function useReadAloud(getContainer: () => HTMLElement | null): ReadAloud 
   const rateRef = useRef(1);
   const genRef = useRef(0); // bumped on any interruption to invalidate stale utterance callbacks
   const playingRef = useRef(false); // synchronous source of truth: are we actively advancing?
+  const voiceRef = useRef<SpeechSynthesisVoice | null>(null);
 
   const speakFrom = useCallback((i: number) => {
     const units = unitsRef.current;
@@ -64,6 +84,8 @@ export function useReadAloud(getContainer: () => HTMLElement | null): ReadAloud 
     const u = units[i];
     const utter = new SpeechSynthesisUtterance(u.text.slice(u.start, u.end));
     utter.rate = rateRef.current;
+    if (!voiceRef.current) voiceRef.current = pickVoice();
+    if (voiceRef.current) { utter.voice = voiceRef.current; utter.lang = voiceRef.current.lang; }
     setActive({ block: u.block, sentence: { start: u.start, end: u.end }, word: null });
     utter.onboundary = (e: SpeechSynthesisEvent) => {
       if (genRef.current !== gen) return;
@@ -97,19 +119,22 @@ export function useReadAloud(getContainer: () => HTMLElement | null): ReadAloud 
     speakFrom(0);
   }, [getContainer, speakFrom]);
 
+  // Native pause()/resume() is unreliable (Chrome often won't resume), so pause cancels and
+  // remembers the current sentence; resume re-speaks it from the start.
   const pause = useCallback(() => {
     if (!SPEECH_OK) return;
     playingRef.current = false;
-    window.speechSynthesis.pause();
+    genRef.current++;
+    window.speechSynthesis.cancel();
     setStatus("paused");
   }, []);
 
   const resume = useCallback(() => {
     if (!SPEECH_OK) return;
     playingRef.current = true;
-    window.speechSynthesis.resume();
     setStatus("playing");
-  }, []);
+    speakFrom(idxRef.current);
+  }, [speakFrom]);
 
   const stop = useCallback(() => {
     if (SPEECH_OK) {
@@ -133,6 +158,15 @@ export function useReadAloud(getContainer: () => HTMLElement | null): ReadAloud 
       speakFrom(idxRef.current);
     }
   }, [speakFrom]);
+
+  // Resolve the best available voice once the browser has loaded its (async) voice list.
+  useEffect(() => {
+    if (!SPEECH_OK) return;
+    const prime = () => { voiceRef.current = pickVoice() ?? voiceRef.current; };
+    prime();
+    window.speechSynthesis.addEventListener("voiceschanged", prime);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", prime);
+  }, []);
 
   // Cleanup on unmount. SidePanel is keyed by node id, so this also fires on node change.
   useEffect(() => () => { if (SPEECH_OK) window.speechSynthesis.cancel(); }, []);
