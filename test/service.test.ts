@@ -174,8 +174,12 @@ describe("ResearchService.synthesize", () => {
     const rootRun: RunFn = async () => ({ answer: "", claims: [], sources: [], costUsd: 0, sessionId: "s", meta: { summary: "Q1 summary", nodes: [{ quote: "Q1", title: "Q1", body: "B1", sources: [] }] } });
     const { projectId } = await svcWith(rootRun).createTopic("AI security");
     const synthRun: RunFn = async () => ({ answer: "# Report\nAll about AI security.", claims: [], sources: [], costUsd: 0.05, sessionId: "s3", meta: null });
-    const report = await new ResearchService(baseDir, synthRun).synthesize(projectId);
-    expect(report).toContain("# Report");
+    const svc = new ResearchService(baseDir, synthRun);
+    const report = await svc.synthesize(projectId);
+    expect(report.markdown).toContain("# Report");
+    expect(report.stale).toBe(false);
+    // persisted and re-readable
+    expect((await svc.getReport(projectId))?.markdown).toContain("# Report");
   });
 });
 

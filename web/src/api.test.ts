@@ -47,10 +47,11 @@ describe("api", () => {
     vi.stubGlobal("fetch", mockStreamFetch([JSON.stringify({ type: "error", message: "boom" })]));
     await expect(api.createTopic("AI security")).rejects.toThrow(/boom/);
   });
-  it("getProject returns the index", async () => {
-    vi.stubGlobal("fetch", mockFetch({ index: { topic: "t", nextSeq: 1, nodes: [] } }));
+  it("getProject returns the index and report status", async () => {
+    vi.stubGlobal("fetch", mockFetch({ index: { topic: "t", nextSeq: 1, nodes: [] }, report: { generatedAt: "2026-06-15T00:00:00Z", stale: true } }));
     const res = await api.getProject("p");
-    expect(res.topic).toBe("t");
+    expect(res.index.topic).toBe("t");
+    expect(res.report?.stale).toBe(true);
   });
   it("throws on non-ok response", async () => {
     vi.stubGlobal("fetch", mockFetch({ error: "boom" }, false, 500));

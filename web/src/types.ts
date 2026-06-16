@@ -14,6 +14,9 @@ export interface NodeMeta {
   researched?: boolean;
 }
 export interface GraphIndex { topic: string; nextSeq: number; nodes: NodeMeta[] }
+/** Whether a saved synthesis exists and whether the graph changed since (needs re-synthesizing). */
+export interface ReportStatus { generatedAt: string; stale: boolean }
+export interface Report extends ReportStatus { markdown: string }
 export interface ResearchNode extends NodeMeta { sources: string[]; body: string }
 export interface ProjectSummary {
   id: string;

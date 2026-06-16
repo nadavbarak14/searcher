@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
-import type { ResearchNode, GraphIndex, NodeMeta, ProjectSummary } from "./types.js";
+import { createHash } from "node:crypto";
+import type { ResearchNode, GraphIndex, NodeMeta, ProjectSummary, StoredReport, ReportStatus, Report } from "./types.js";
 import { nodeToMarkdown, markdownToNode } from "./serialize.js";
-import { projectDir, nodePath, indexPath } from "./paths.js";
+import { projectDir, nodePath, indexPath, reportPath } from "./paths.js";
 
 function metaOf(node: ResearchNode): NodeMeta {
   const meta: NodeMeta = { id: node.id, kind: node.kind, parents: node.parents, question: node.question, created: node.created };
@@ -238,6 +239,59 @@ export class GraphStore {
       .catch(() => new Date(0).toISOString());
 
     return { id: this.projectId, topic: index.topic, nodes: index.nodes.length, sources: sources.size, depth, updated };
+  }
+
+  /**
+   * A stable hash of the node content the synthesis reads (every node's question + body, in id
+   * order). Two graphs with the same content hash to the same value; adding, removing, or editing
+   * a node changes it. Position/token/cost changes are deliberately excluded — they don't affect
+   * the report — so dragging a card around doesn't mark the report stale.
+   */
+  private async contentFingerprint(index: GraphIndex): Promise<string> {
+    const parts: string[] = [];
+    for (const m of [...index.nodes].sort((a, b) => a.id.localeCompare(b.id))) {
+      const node = await this.getNode(m.id).catch(() => null);
+      if (node) parts.push(`${node.id} ${node.question} ${node.body}`);
+    }
+    return createHash("sha1").update(parts.join("")).digest("hex");
+  }
+
+  /** Persist the synthesis, fingerprinting the current graph so we can later detect drift. */
+  async saveReport(markdown: string): Promise<StoredReport> {
+    return this.enqueue(async () => {
+      const index = await this.load();
+      const stored: StoredReport = {
+        markdown,
+        generatedAt: new Date().toISOString(),
+        fingerprint: await this.contentFingerprint(index),
+      };
+      await fs.writeFile(reportPath(this.baseDir, this.projectId), JSON.stringify(stored, null, 2), "utf8");
+      return stored;
+    });
+  }
+
+  private async readStoredReport(): Promise<StoredReport | null> {
+    try {
+      return JSON.parse(await fs.readFile(reportPath(this.baseDir, this.projectId), "utf8")) as StoredReport;
+    } catch {
+      return null; // no report yet (or unreadable)
+    }
+  }
+
+  /** Lightweight: does a saved report exist, and has the graph changed since? (No markdown.) */
+  async reportStatus(): Promise<ReportStatus | null> {
+    const stored = await this.readStoredReport();
+    if (!stored) return null;
+    const current = await this.contentFingerprint(await this.load());
+    return { generatedAt: stored.generatedAt, stale: current !== stored.fingerprint };
+  }
+
+  /** The full saved report with its staleness, or null if none has been generated. */
+  async report(): Promise<Report | null> {
+    const stored = await this.readStoredReport();
+    if (!stored) return null;
+    const current = await this.contentFingerprint(await this.load());
+    return { markdown: stored.markdown, generatedAt: stored.generatedAt, stale: current !== stored.fingerprint };
   }
 
   /** Load the index, rebuilding from .md files if it is missing or unreadable. */

@@ -14,3 +14,9 @@ export function nodePath(baseDir: string, projectId: string, nodeId: string): st
 export function indexPath(baseDir: string, projectId: string): string {
   return path.join(baseDir, projectId, "graph.json");
 }
+
+/** Absolute path to a project's saved synthesis. NOT a `.md` file, so rebuildIndex() (which
+ *  scans `*.md` as nodes) and the synthesis Claude run (which reads `*.md`) both ignore it. */
+export function reportPath(baseDir: string, projectId: string): string {
+  return path.join(baseDir, projectId, "report.json");
+}

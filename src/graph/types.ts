@@ -52,6 +52,24 @@ export interface GraphIndex {
   nodes: NodeMeta[];
 }
 
+/** The persisted synthesis: the report markdown plus the graph fingerprint it was generated from. */
+export interface StoredReport {
+  markdown: string;
+  generatedAt: string; // ISO 8601
+  fingerprint: string; // hash of the node content this report was synthesized from
+}
+
+/** Whether a saved report exists and whether the graph has changed since (so it needs re-synthesizing). */
+export interface ReportStatus {
+  generatedAt: string;
+  stale: boolean;
+}
+
+/** A saved report with its staleness, for display. */
+export interface Report extends ReportStatus {
+  markdown: string;
+}
+
 /** A one-line summary of a project, used to render the library/home screen. */
 export interface ProjectSummary {
   id: string; // the project folder name

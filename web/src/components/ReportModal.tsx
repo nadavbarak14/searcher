@@ -3,8 +3,16 @@ import { Icon } from "./ui";
 
 export type ReportState =
   | { status: "loading" }
-  | { status: "ready"; markdown: string }
+  | { status: "ready"; markdown: string; generatedAt?: string; stale?: boolean }
   | { status: "error"; error: string };
+
+/** "Jun 15, 2026, 2:14 PM" → a short, locale-aware label; empty string if unparseable. */
+function formatWhen(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
 
 /* ---- minimal inline renderer: **bold**, `code`, [text](url) ---- */
 const INLINE = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
@@ -98,7 +106,7 @@ function renderMarkdown(md: string): ReactNode[] {
   return out;
 }
 
-export function ReportModal({ state, onClose, topic }: { state: ReportState | null; onClose: () => void; topic: string }) {
+export function ReportModal({ state, onClose, topic, onResynthesize, resynthesizing }: { state: ReportState | null; onClose: () => void; topic: string; onResynthesize?: () => void; resynthesizing?: boolean }) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -110,6 +118,8 @@ export function ReportModal({ state, onClose, topic }: { state: ReportState | nu
 
   if (!state) return null;
   const markdown = state.status === "ready" ? state.markdown : "";
+  const generatedAt = state.status === "ready" ? state.generatedAt : undefined;
+  const stale = state.status === "ready" && state.stale === true;
 
   const copy = () => {
     if (markdown && navigator.clipboard) navigator.clipboard.writeText(markdown).catch(() => {});
@@ -140,6 +150,7 @@ export function ReportModal({ state, onClose, topic }: { state: ReportState | nu
           <span style={{ color: "var(--clay)", display: "flex" }}><Icon name="sparkle" size={20} /></span>
           <div style={{ flex: 1 }}>
             <div className="eyebrow">Synthesis</div>
+            {generatedAt && <div className="mono" style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 2 }}>Generated {formatWhen(generatedAt)}</div>}
           </div>
           <button className="btn btn-sm" onClick={copy} disabled={state.status !== "ready"}>
             <Icon name={copied ? "check" : "copy"} size={14} /> {copied ? "Copied" : "Copy"}
@@ -149,6 +160,20 @@ export function ReportModal({ state, onClose, topic }: { state: ReportState | nu
           </button>
           <button className="btn btn-ghost btn-sm" onClick={onClose}><Icon name="x" size={16} /></button>
         </div>
+
+        {/* out-of-date strip: the graph changed since this report was generated */}
+        {stale && (
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 28px", background: "var(--clay-soft)", borderBottom: "1px solid var(--clay-line)", flexShrink: 0 }}>
+            <span style={{ flex: 1, fontSize: 13, color: "var(--clay)", lineHeight: 1.4 }}>
+              This report is out of date — the graph changed since it was generated.
+            </span>
+            {onResynthesize && (
+              <button className="btn btn-primary btn-sm" onClick={onResynthesize} disabled={resynthesizing}>
+                <Icon name="retry" size={14} /> {resynthesizing ? "Re-synthesizing…" : "Re-synthesize"}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* body */}
         {state.status === "loading" && (
