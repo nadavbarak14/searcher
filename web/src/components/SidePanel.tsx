@@ -86,9 +86,11 @@ function ReadAloudBar({ tts }: { tts: ReadAloud }) {
   }
   return (
     <div className="nodrag" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <button className="iconbtn bare" title="Previous sentence" onClick={tts.prev}><Icon name="skipBack" size={15} /></button>
       <button className="iconbtn bare" title={playing ? "Pause" : "Resume"} onClick={playing ? tts.pause : tts.resume}>
         <Icon name={playing ? "pause" : "play"} size={15} />
       </button>
+      <button className="iconbtn bare" title="Next sentence" onClick={tts.next}><Icon name="skipForward" size={15} /></button>
       <button className="iconbtn bare" title="Stop" onClick={tts.stop}><Icon name="stop" size={15} /></button>
       <button className="chip" title="Playback speed" onClick={cycleSpeed}
         style={{ fontSize: 11.5, padding: "3px 8px" }}>
@@ -227,7 +229,15 @@ export function SidePanel({ node, body, sources, childLinks, pendingChildren, re
   const onBodyMouseUp = () => {
     const s = window.getSelection();
     const bodyEl = bodyRef.current;
-    if (!s || s.isCollapsed || !bodyEl) { setSel(null); return; }
+    if (!s || !bodyEl) { setSel(null); return; }
+    // A plain click (collapsed selection) while listening jumps the reader to that sentence.
+    if (s.isCollapsed) {
+      setSel(null);
+      if (tts.status !== "idle" && s.anchorNode && bodyEl.contains(s.anchorNode)) {
+        tts.playFromNode(s.anchorNode, s.anchorOffset);
+      }
+      return;
+    }
     const range = s.getRangeAt(0);
     if (!bodyEl.contains(range.startContainer) || !bodyEl.contains(range.endContainer)) { setSel(null); return; }
     const text = s.toString();

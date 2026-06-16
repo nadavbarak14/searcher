@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { segmentSentences, wordRangeAt } from "./graph/speech";
+import { offsetWithin } from "./graph/range";
 
 export type ReadStatus = "idle" | "playing" | "paused";
 
@@ -55,6 +56,11 @@ export interface ReadAloud {
   resume: () => void;
   stop: () => void;
   setRate: (r: number) => void;
+  /** Jump to and speak the previous/next sentence (clamped to the document ends). */
+  prev: () => void;
+  next: () => void;
+  /** Start (or resume) reading from the sentence containing a clicked DOM position. */
+  playFromNode: (node: Node, nodeOffset: number) => void;
 }
 
 /** Drive window.speechSynthesis over the rendered blocks in `getContainer()`, one sentence per utterance. */
@@ -159,6 +165,45 @@ export function useReadAloud(getContainer: () => HTMLElement | null): ReadAloud 
     }
   }, [speakFrom]);
 
+  // Jump to a sentence index (clamped) and speak it. Works while playing or paused.
+  const seek = useCallback((i: number) => {
+    if (!SPEECH_OK) return;
+    const units = unitsRef.current;
+    if (!units.length) return;
+    const target = Math.max(0, Math.min(i, units.length - 1));
+    genRef.current++;
+    window.speechSynthesis.cancel();
+    playingRef.current = true;
+    setStatus("playing");
+    speakFrom(target);
+  }, [speakFrom]);
+
+  const prev = useCallback(() => seek(idxRef.current - 1), [seek]);
+  const next = useCallback(() => seek(idxRef.current + 1), [seek]);
+
+  // Start reading from the sentence under a clicked DOM position. Builds the queue if needed,
+  // so it works even from idle (a click is the third way to navigate, alongside prev/next).
+  const playFromNode = useCallback((node: Node, nodeOffset: number) => {
+    if (!SPEECH_OK) return;
+    const container = getContainer();
+    if (!container) return;
+    const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement);
+    const block = el?.closest<HTMLElement>(READABLE) ?? null;
+    if (!block || !container.contains(block)) return;
+    const offset = offsetWithin(block, node, nodeOffset);
+    genRef.current++;
+    window.speechSynthesis.cancel();
+    unitsRef.current = buildUnits(container);
+    const units = unitsRef.current;
+    if (!units.length) return;
+    let i = units.findIndex((u) => u.block === block && offset >= u.start && offset < u.end);
+    if (i < 0) i = units.findIndex((u) => u.block === block); // click past the last sentence's text → that block's start
+    if (i < 0) return;
+    playingRef.current = true;
+    setStatus("playing");
+    speakFrom(i);
+  }, [getContainer, speakFrom]);
+
   // Resolve the best available voice once the browser has loaded its (async) voice list.
   useEffect(() => {
     if (!SPEECH_OK) return;
@@ -171,5 +216,5 @@ export function useReadAloud(getContainer: () => HTMLElement | null): ReadAloud 
   // Cleanup on unmount. SidePanel is keyed by node id, so this also fires on node change.
   useEffect(() => () => { if (SPEECH_OK) window.speechSynthesis.cancel(); }, []);
 
-  return { supported: SPEECH_OK, status, active, rate, play, pause, resume, stop, setRate };
+  return { supported: SPEECH_OK, status, active, rate, play, pause, resume, stop, setRate, prev, next, playFromNode };
 }
