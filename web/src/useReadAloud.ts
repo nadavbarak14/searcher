@@ -61,6 +61,8 @@ export interface ReadAloud {
   next: () => void;
   /** Start (or resume) reading from the sentence containing a clicked DOM position. */
   playFromNode: (node: Node, nodeOffset: number) => void;
+  /** The sentence span (within its block) containing a DOM position — for the hover preview. Null if outside a readable block or before the queue is built. */
+  sentenceAt: (node: Node, nodeOffset: number) => { block: HTMLElement; start: number; end: number } | null;
 }
 
 /** Drive window.speechSynthesis over the rendered blocks in `getContainer()`, one sentence per utterance. */
@@ -204,6 +206,20 @@ export function useReadAloud(getContainer: () => HTMLElement | null): ReadAloud 
     speakFrom(i);
   }, [getContainer, speakFrom]);
 
+  // Resolve the sentence under a DOM position from the already-built queue (no rebuild) — used
+  // to preview the click target while listening. Returns null before play (queue empty).
+  const sentenceAt = useCallback((node: Node, nodeOffset: number) => {
+    const units = unitsRef.current;
+    if (!units.length) return null;
+    const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as HTMLElement);
+    const block = el?.closest<HTMLElement>(READABLE) ?? null;
+    if (!block) return null;
+    const offset = offsetWithin(block, node, nodeOffset);
+    const u = units.find((u) => u.block === block && offset >= u.start && offset < u.end)
+      ?? units.find((u) => u.block === block);
+    return u ? { block: u.block, start: u.start, end: u.end } : null;
+  }, []);
+
   // Resolve the best available voice once the browser has loaded its (async) voice list.
   useEffect(() => {
     if (!SPEECH_OK) return;
@@ -216,5 +232,5 @@ export function useReadAloud(getContainer: () => HTMLElement | null): ReadAloud 
   // Cleanup on unmount. SidePanel is keyed by node id, so this also fires on node change.
   useEffect(() => () => { if (SPEECH_OK) window.speechSynthesis.cancel(); }, []);
 
-  return { supported: SPEECH_OK, status, active, rate, play, pause, resume, stop, setRate, prev, next, playFromNode };
+  return { supported: SPEECH_OK, status, active, rate, play, pause, resume, stop, setRate, prev, next, playFromNode, sentenceAt };
 }

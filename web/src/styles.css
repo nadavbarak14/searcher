@@ -258,5 +258,9 @@ button { font-family: inherit; cursor: pointer; }
    properties — background-color/color are safe; border-radius is ignored. */
 ::highlight(tts-sentence) { background-color: var(--accent-soft); }
 ::highlight(tts-word) { background-color: var(--accent-line); color: var(--accent-deep); }
+/* Hover preview while listening: the sentence a click would jump to. A dotted
+   underline reads as "clickable" without the filled band of the active sentence,
+   and leaves drag-to-select (for follow-ups) visually unchanged. */
+::highlight(tts-hover) { text-decoration: underline dotted var(--accent); text-underline-offset: 3px; }
 /* Fallback band when the CSS Custom Highlight API is unavailable. */
 .tts-block-active { background-color: var(--accent-soft); border-radius: 4px; }
