@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { GraphStore } from "./graph/store.js";
 import { projectDir } from "./graph/paths.js";
-import type { ResearchNode, Anchor, GraphIndex } from "./graph/types.js";
+import type { ResearchNode, Anchor, GraphIndex, Report, ReportStatus } from "./graph/types.js";
 import { runClaude, runClaudeStream, type ActivityEvent } from "./claude/runner.js";
 import { BRANCH_SYSTEM, ROOT_SYSTEM, rootPrompt, branchPrompt, synthesizePrompt } from "./claude/prompts.js";
 import { buildBrief } from "./research/brief.js";
@@ -182,11 +182,23 @@ export class ResearchService {
     return new GraphStore(this.baseDir, projectId).setPositions(updates);
   }
 
-  async synthesize(projectId: string): Promise<string> {
+  /** Synthesize the whole project into a report, persist it (fingerprinted), and return it fresh. */
+  async synthesize(projectId: string): Promise<Report> {
     const store = new GraphStore(this.baseDir, projectId);
     const index = await store.load();
     const cwd = projectDir(this.baseDir, projectId);
     const res = await this.run({ cwd, prompt: synthesizePrompt(index.topic), systemPrompt: BRANCH_SYSTEM });
-    return res.answer;
+    const stored = await store.saveReport(res.answer);
+    return { markdown: stored.markdown, generatedAt: stored.generatedAt, stale: false };
+  }
+
+  /** The saved report (with staleness), or null if the project has never been synthesized. */
+  async getReport(projectId: string): Promise<Report | null> {
+    return new GraphStore(this.baseDir, projectId).report();
+  }
+
+  /** Lightweight report status (exists? stale?) for the project load, without the markdown. */
+  async reportStatus(projectId: string): Promise<ReportStatus | null> {
+    return new GraphStore(this.baseDir, projectId).reportStatus();
   }
 }

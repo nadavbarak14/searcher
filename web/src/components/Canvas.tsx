@@ -12,7 +12,7 @@ import {
   type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { GraphIndex, NodeMeta, Position, Anchor } from "../types";
+import type { GraphIndex, NodeMeta, Position, Anchor, ReportStatus } from "../types";
 import { api } from "../api";
 import { buildCanvas, type PendingNode } from "../graph/model";
 import { layoutNodes, COL_W, ROW_H } from "../graph/layout";
@@ -26,7 +26,7 @@ function Divider() {
   return <div style={{ width: 1, height: 24, background: "var(--line)", flexShrink: 0 }} />;
 }
 
-function TopBar({ topic, count, busy, onHome, onSynthesize }: { topic: string; count: number; busy: boolean; onHome: () => void; onSynthesize: () => void }) {
+function TopBar({ topic, count, busy, report, onHome, onSynthesize, onViewReport }: { topic: string; count: number; busy: boolean; report: ReportStatus | null; onHome: () => void; onSynthesize: () => void; onViewReport: () => void }) {
   return (
     <header style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 16px", height: 60, background: "var(--card)", borderBottom: "1px solid var(--line)", flexShrink: 0, zIndex: 5 }}>
       <button className="btn btn-ghost btn-sm" onClick={onHome}><Icon name="arrowLeft" size={16} /> Library</button>
@@ -37,7 +37,23 @@ function TopBar({ topic, count, busy, onHome, onSynthesize }: { topic: string; c
         <div className="serif" style={{ fontSize: 16, fontWeight: 500, color: "var(--ink)", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{topic}</div>
         <div className="mono" style={{ fontSize: 10.5, color: "var(--faint)", letterSpacing: "0.04em" }}>{count} NODES</div>
       </div>
-      <button className="btn btn-primary btn-sm" onClick={onSynthesize} disabled={busy}><Icon name="sparkle" size={15} /> {busy ? "Synthesizing…" : "Synthesize"}</button>
+      {report ? (
+        // A synthesis exists: view the saved one; re-synthesize is primary when it's out of date.
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {report.stale && (
+            <span className="mono" title="The graph changed since this report was generated"
+              style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10.5, letterSpacing: "0.03em", color: "var(--clay)", background: "var(--clay-soft)", border: "1px solid var(--clay-line)", borderRadius: 999, padding: "3px 9px" }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--clay)" }} /> OUT OF DATE
+            </span>
+          )}
+          <button className="btn btn-sm" onClick={onViewReport}><Icon name="sparkle" size={15} /> View report</button>
+          <button className={report.stale ? "btn btn-primary btn-sm" : "btn btn-ghost btn-sm"} onClick={onSynthesize} disabled={busy}>
+            <Icon name="retry" size={14} /> {busy ? "Synthesizing…" : "Re-synthesize"}
+          </button>
+        </div>
+      ) : (
+        <button className="btn btn-primary btn-sm" onClick={onSynthesize} disabled={busy}><Icon name="sparkle" size={15} /> {busy ? "Synthesizing…" : "Synthesize"}</button>
+      )}
     </header>
   );
 }
@@ -61,12 +77,14 @@ function ZoomCluster({ onFit }: { onFit: () => void }) {
   );
 }
 
-function Flow({ projectId, index, onReloadIndex, onHome, onSynthesize, busy }: {
+function Flow({ projectId, index, onReloadIndex, onHome, onSynthesize, onViewReport, report, busy }: {
   projectId: string;
   index: GraphIndex;
   onReloadIndex: () => Promise<void>;
   onHome: () => void;
   onSynthesize: () => void;
+  onViewReport: () => void;
+  report: ReportStatus | null;
   busy: boolean;
 }) {
   // Which node's content is open in the side panel (null = panel closed). Reading happens there;
@@ -303,7 +321,7 @@ function Flow({ projectId, index, onReloadIndex, onHome, onSynthesize, busy }: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <TopBar topic={index.topic} count={rfNodes.length} busy={busy} onHome={onHome} onSynthesize={onSynthesize} />
+      <TopBar topic={index.topic} count={rfNodes.length} busy={busy} report={report} onHome={onHome} onSynthesize={onSynthesize} onViewReport={onViewReport} />
       <div className="canvas" style={{ flex: 1, minHeight: 0, position: "relative" }}>
         <ReactFlow nodes={rfNodes} edges={rfEdges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onNodeDragStop={onNodeDragStop} onPaneClick={() => setSelectedId(null)} minZoom={0.2} maxZoom={2} defaultViewport={{ x: 120, y: 300, zoom: 0.9 }} proOptions={{ hideAttribution: true }}>
           <Background variant={BackgroundVariant.Dots} gap={26} size={1.1} color="var(--line-strong)" />
@@ -337,7 +355,7 @@ function Flow({ projectId, index, onReloadIndex, onHome, onSynthesize, busy }: {
   );
 }
 
-export function Canvas(props: { projectId: string; index: GraphIndex; onReloadIndex: () => Promise<void>; onHome: () => void; onSynthesize: () => void; busy: boolean }) {
+export function Canvas(props: { projectId: string; index: GraphIndex; onReloadIndex: () => Promise<void>; onHome: () => void; onSynthesize: () => void; onViewReport: () => void; report: ReportStatus | null; busy: boolean }) {
   return (
     <ReactFlowProvider key={props.projectId}>
       <Flow {...props} />

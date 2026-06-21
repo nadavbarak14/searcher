@@ -1,27 +1,34 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Anchor } from "../types";
 import type { CanvasNode, ChildLink } from "../graph/model";
 import { anchorKey, anchorFromSelection } from "../graph/anchor";
 import { renderMarkdown } from "../graph/markdown";
+import { offsetWithin, rangeWithin } from "../graph/range";
+import { useReadAloud, type ReadAloud } from "../useReadAloud";
 import { Icon } from "./ui";
+
+/** The DOM text position under a viewport point, bridging the two browser APIs (Firefox vs Blink/WebKit). */
+function caretFromPoint(x: number, y: number): { node: Node; offset: number } | null {
+  const d = document as unknown as {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  if (d.caretPositionFromPoint) {
+    const p = d.caretPositionFromPoint(x, y);
+    return p ? { node: p.offsetNode, offset: p.offset } : null;
+  }
+  if (d.caretRangeFromPoint) {
+    const r = d.caretRangeFromPoint(x, y);
+    return r ? { node: r.startContainer, offset: r.startOffset } : null;
+  }
+  return null;
+}
 
 /** Compact token count: 1234 → "1.2k". */
 function formatTokens(n: number): string {
   if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, "") + "k";
   return String(n);
-}
-
-// char offset of a node/offset pair within container.textContent
-function offsetWithin(container: HTMLElement, node: Node, nodeOffset: number): number {
-  let total = 0;
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  let n: Node | null;
-  while ((n = walker.nextNode())) {
-    if (n === node) return total + nodeOffset;
-    total += (n.textContent ?? "").length;
-  }
-  return total;
 }
 
 function SourceList({ sources }: { sources?: string[] }) {
@@ -73,6 +80,39 @@ function AskBox({ anchorText, onAsk, onCancel }: { anchorText?: string; onAsk: (
         <button className="btn btn-ghost btn-sm" onClick={close}>Cancel</button>
         <button className="btn btn-primary btn-sm" disabled={!draft.trim()} onClick={submit}><Icon name="sparkle" size={14} /> Ask</button>
       </div>
+    </div>
+  );
+}
+
+const SPEEDS = [1, 1.25, 1.5, 2, 0.75];
+
+/** Transport for read-aloud: Listen → (pause/resume, stop, speed). */
+function ReadAloudBar({ tts }: { tts: ReadAloud }) {
+  const playing = tts.status === "playing";
+  const cycleSpeed = () => {
+    const i = SPEEDS.indexOf(tts.rate);
+    tts.setRate(SPEEDS[(i < 0 ? 0 : i + 1) % SPEEDS.length]);
+  };
+  if (tts.status === "idle") {
+    return (
+      <button className="iconbtn bare accent nodrag" title="Read aloud (Space)" onClick={tts.play}
+        style={{ width: "auto", padding: "0 9px", gap: 6, display: "inline-flex", alignItems: "center", fontFamily: "var(--sans)", fontSize: 12.5 }}>
+        <Icon name="headphones" size={15} /> Listen
+      </button>
+    );
+  }
+  return (
+    <div className="nodrag" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <button className="iconbtn bare" title="Previous sentence (←)" onClick={tts.prev}><Icon name="skipBack" size={15} /></button>
+      <button className="iconbtn bare" title={playing ? "Pause (Space)" : "Resume (Space)"} onClick={playing ? tts.pause : tts.resume}>
+        <Icon name={playing ? "pause" : "play"} size={15} />
+      </button>
+      <button className="iconbtn bare" title="Next sentence (→)" onClick={tts.next}><Icon name="skipForward" size={15} /></button>
+      <button className="iconbtn bare" title="Stop" onClick={tts.stop}><Icon name="stop" size={15} /></button>
+      <button className="chip" title="Playback speed" onClick={cycleSpeed}
+        style={{ fontSize: 11.5, padding: "3px 8px" }}>
+        {tts.rate}×
+      </button>
     </div>
   );
 }
@@ -130,6 +170,95 @@ export function SidePanel({ node, body, sources, childLinks, pendingChildren, re
   const [popover, setPopover] = useState<{ link: ChildLink; x: number; y: number } | null>(null);
   const [sel, setSel] = useState<{ anchor: Anchor; x: number; y: number } | null>(null);
   const [askAnchor, setAskAnchor] = useState<Anchor | null>(null);
+  const tts = useReadAloud(() => bodyRef.current);
+  const lastSentRef = useRef<string>("");
+  const lastBlockRef = useRef<HTMLElement | null>(null);
+  // Latest tts for the keyboard listener (subscribed once; reads through the ref to stay fresh).
+  const ttsRef = useRef(tts);
+  ttsRef.current = tts;
+  // The sentence currently underlined as the hover/click target, to avoid redundant repaints.
+  const hoverRef = useRef<{ block: HTMLElement; key: string } | null>(null);
+  const clearHover = useCallback(() => {
+    if (!hoverRef.current) return;
+    hoverRef.current = null;
+    (window as unknown as { CSS?: { highlights?: Map<string, unknown> } }).CSS?.highlights?.delete("tts-hover");
+  }, []);
+
+  // Keyboard transport while the panel is open: Space = play/pause, ←/→ = prev/next sentence.
+  // Ignored inside text fields (so typing a follow-up still works) and for modifier combos.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = ttsRef.current;
+      if (!t.supported) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (e.code === "Space") {
+        e.preventDefault();
+        if (t.status === "idle") t.play();
+        else if (t.status === "playing") t.pause();
+        else t.resume();
+      } else if (e.code === "ArrowRight" && t.status !== "idle") {
+        e.preventDefault();
+        t.next();
+      } else if (e.code === "ArrowLeft" && t.status !== "idle") {
+        e.preventDefault();
+        t.prev();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Drop the hover preview the moment reading stops.
+  useEffect(() => { if (tts.status === "idle") clearHover(); }, [tts.status, clearHover]);
+
+  // Paint the active sentence/word via the CSS Custom Highlight API (no DOM mutation),
+  // falling back to a class band. Scroll only when the sentence (not the word) changes.
+  useEffect(() => {
+    const w = window as unknown as {
+      CSS?: { highlights?: Map<string, unknown> };
+      Highlight?: new (...ranges: Range[]) => unknown;
+    };
+    const hasHL = !!(w.CSS && w.CSS.highlights && typeof w.Highlight === "function");
+    const a = tts.active;
+
+    if (!hasHL) {
+      document.querySelectorAll(".tts-block-active").forEach((el) => el.classList.remove("tts-block-active"));
+      if (a) a.block.classList.add("tts-block-active");
+      return;
+    }
+    const highlights = w.CSS!.highlights!;
+    const Highlight = w.Highlight!;
+    if (!a) {
+      highlights.delete("tts-sentence");
+      highlights.delete("tts-word");
+      return;
+    }
+    highlights.set("tts-sentence", new Highlight(rangeWithin(a.block, a.sentence.start, a.sentence.end)));
+    if (a.word) highlights.set("tts-word", new Highlight(rangeWithin(a.block, a.word.start, a.word.end)));
+    else highlights.delete("tts-word");
+
+    const sentKey = `${a.sentence.start}-${a.sentence.end}`;
+    if (a.block !== lastBlockRef.current || sentKey !== lastSentRef.current) {
+      lastBlockRef.current = a.block;
+      lastSentRef.current = sentKey;
+      a.block.scrollIntoView({ block: "nearest", behavior: "instant" });
+    }
+  }, [tts.active]);
+
+  // Stop speech (and clear highlights via the effect above) when the body content changes.
+  const { stop: stopReading } = tts;
+  useEffect(() => { if (body !== undefined) stopReading(); }, [body, stopReading]);
+
+  // Clear highlights on unmount.
+  useEffect(() => () => {
+    const w = window as unknown as { CSS?: { highlights?: Map<string, unknown> } };
+    w.CSS?.highlights?.delete("tts-sentence");
+    w.CSS?.highlights?.delete("tts-word");
+    w.CSS?.highlights?.delete("tts-hover");
+    document.querySelectorAll(".tts-block-active").forEach((el) => el.classList.remove("tts-block-active"));
+  }, []);
 
   const linkByKey = useMemo(() => {
     const m = new Map<string, ChildLink>();
@@ -154,10 +283,38 @@ export function SidePanel({ node, body, sources, childLinks, pendingChildren, re
     setPopover({ link, x: r.left, y: r.bottom + 6 });
   };
 
+  // While listening, underline the sentence under the cursor so it's clear a click jumps there.
+  // Suppressed mid drag (e.buttons !== 0) so selecting text for a follow-up looks unchanged.
+  const onBodyMouseMove = (e: React.MouseEvent) => {
+    if (tts.status === "idle" || e.buttons !== 0) { clearHover(); return; }
+    const bodyEl = bodyRef.current;
+    if (!bodyEl) return;
+    const w = window as unknown as { CSS?: { highlights?: Map<string, unknown> }; Highlight?: new (...r: Range[]) => unknown };
+    if (!(w.CSS?.highlights && typeof w.Highlight === "function")) return; // the hint needs the Highlight API; no fallback
+    const caret = caretFromPoint(e.clientX, e.clientY);
+    if (!caret || !bodyEl.contains(caret.node)) { clearHover(); return; }
+    const sent = tts.sentenceAt(caret.node, caret.offset);
+    if (!sent) { clearHover(); return; }
+    const a = tts.active; // don't underline the sentence that's already the active reading band
+    if (a && a.block === sent.block && a.sentence.start === sent.start && a.sentence.end === sent.end) { clearHover(); return; }
+    const key = `${sent.start}-${sent.end}`;
+    if (hoverRef.current && hoverRef.current.block === sent.block && hoverRef.current.key === key) return;
+    hoverRef.current = { block: sent.block, key };
+    w.CSS.highlights.set("tts-hover", new w.Highlight(rangeWithin(sent.block, sent.start, sent.end)) as never);
+  };
+
   const onBodyMouseUp = () => {
     const s = window.getSelection();
     const bodyEl = bodyRef.current;
-    if (!s || s.isCollapsed || !bodyEl) { setSel(null); return; }
+    if (!s || !bodyEl) { setSel(null); return; }
+    // A plain click (collapsed selection) while listening jumps the reader to that sentence.
+    if (s.isCollapsed) {
+      setSel(null);
+      if (tts.status !== "idle" && s.anchorNode && bodyEl.contains(s.anchorNode)) {
+        tts.playFromNode(s.anchorNode, s.anchorOffset);
+      }
+      return;
+    }
     const range = s.getRangeAt(0);
     if (!bodyEl.contains(range.startContainer) || !bodyEl.contains(range.endContainer)) { setSel(null); return; }
     const text = s.toString();
@@ -194,6 +351,7 @@ export function SidePanel({ node, body, sources, childLinks, pendingChildren, re
             {node.tokens && node.tokens > 0 ? <span title={node.costUsd !== undefined ? `${node.tokens.toLocaleString()} tokens · $${node.costUsd.toFixed(3)}` : `${node.tokens.toLocaleString()} tokens`}>≈ {formatTokens(node.tokens)} tokens</span> : null}
           </div>
         </div>
+        {tts.supported && body && !researching && <ReadAloudBar tts={tts} />}
         <button className="iconbtn bare" title="Close" onClick={onClose} style={{ flexShrink: 0 }}><Icon name="x" size={16} /></button>
       </div>
 
@@ -211,7 +369,7 @@ export function SidePanel({ node, body, sources, childLinks, pendingChildren, re
           </div>
         ) : (
           <>
-            <div ref={bodyRef} onMouseUp={onBodyMouseUp} className="md-body serif"
+            <div ref={bodyRef} onMouseUp={onBodyMouseUp} onMouseMove={onBodyMouseMove} onMouseLeave={clearHover} className="md-body serif"
               style={{ fontSize: 15, lineHeight: 1.62, color: "var(--ink-soft)", userSelect: "text", WebkitUserSelect: "text", cursor: "text" }}>
               {body === undefined
                 ? <span className="mono" style={{ color: "var(--faint)" }}>{error ?? "Loading…"}</span>

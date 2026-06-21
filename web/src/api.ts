@@ -1,4 +1,4 @@
-import type { GraphIndex, ResearchNode, ProjectSummary } from "./types";
+import type { GraphIndex, ResearchNode, ProjectSummary, Report, ReportStatus } from "./types";
 
 /** A live activity item from the backend stream (mirrors backend ActivityEvent). */
 export type ActivityEvent = { type: "tool" | "status"; label: string };
@@ -55,7 +55,8 @@ export const api = {
   listProjects: () => jsonFetch<{ projects: ProjectSummary[] }>("/api/projects").then((r) => r.projects),
   createTopic: (topic: string, onActivity: (e: ActivityEvent) => void = () => {}) =>
     streamNdjson<{ projectId: string; findingCount: number }>("/api/projects", { topic }, onActivity),
-  getProject: (id: string) => jsonFetch<{ index: GraphIndex }>(`/api/projects/${id}`).then((r) => r.index),
+  getProject: (id: string) => jsonFetch<{ index: GraphIndex; report: ReportStatus | null }>(`/api/projects/${id}`),
+  getReport: (id: string) => jsonFetch<{ report: Report | null }>(`/api/projects/${id}/report`).then((r) => r.report),
   getNode: (id: string, nodeId: string) =>
     jsonFetch<{ node: ResearchNode }>(`/api/projects/${id}/nodes/${nodeId}`).then((r) => r.node),
   branch: (
@@ -70,5 +71,5 @@ export const api = {
     streamNdjson<ResearchNode>(`/api/projects/${id}/nodes/${nodeId}/research`, {}, onActivity),
   setPositions: (id: string, positions: { id: string; x: number; y: number }[]) =>
     send<{ ok: true }>("PATCH", `/api/projects/${id}/positions`, { positions }),
-  synthesize: (id: string) => send<{ markdown: string }>("POST", `/api/projects/${id}/synthesize`, {}).then((r) => r.markdown),
+  synthesize: (id: string) => send<{ report: Report }>("POST", `/api/projects/${id}/synthesize`, {}).then((r) => r.report),
 };

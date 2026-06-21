@@ -60,7 +60,8 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const store = new GraphStore(deps.dataDir, req.params.id);
     try {
       const index = await store.load();
-      return { index };
+      const report = await store.reportStatus(); // light: exists? stale? (no markdown)
+      return { index, report };
     } catch {
       return reply.code(404).send({ error: "project not found" });
     }
@@ -101,8 +102,13 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   });
 
   app.post<{ Params: { id: string } }>("/api/projects/:id/synthesize", async (req) => {
-    const markdown = await deps.service.synthesize(req.params.id);
-    return { markdown };
+    const report = await deps.service.synthesize(req.params.id);
+    return { report };
+  });
+
+  app.get<{ Params: { id: string } }>("/api/projects/:id/report", async (req) => {
+    const report = await deps.service.getReport(req.params.id);
+    return { report }; // null when never synthesized
   });
 
   app.get<{ Params: { id: string; nodeId: string } }>("/api/projects/:id/nodes/:nodeId", async (req, reply) => {

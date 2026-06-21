@@ -7,7 +7,8 @@ import type { CSSProperties, ReactNode } from "react";
 export type IconName =
   | "search" | "plus" | "minus" | "chevron" | "arrowLeft" | "arrowUpRight"
   | "sparkle" | "link" | "copy" | "x" | "retry" | "fit" | "dot" | "home"
-  | "branch" | "trash" | "target" | "check" | "expandAll" | "collapseAll";
+  | "branch" | "trash" | "target" | "check" | "expandAll" | "collapseAll"
+  | "play" | "pause" | "stop" | "headphones" | "skipBack" | "skipForward";
 
 const PATHS: Record<IconName, ReactNode> = {
   search: <><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>,
@@ -30,6 +31,12 @@ const PATHS: Record<IconName, ReactNode> = {
   check: <><path d="M5 13l4 4L19 7" /></>,
   expandAll: <><path d="M7 8l5-5 5 5" /><path d="M7 16l5 5 5-5" /></>,
   collapseAll: <><path d="M7 5l5 5 5-5" /><path d="M7 19l5-5 5 5" /></>,
+  play: <><path d="M8 5v14l11-7z" /></>,
+  pause: <><path d="M9 5v14M15 5v14" /></>,
+  stop: <><rect x="6" y="6" width="12" height="12" rx="1.5" /></>,
+  headphones: <><path d="M5 13a7 7 0 0 1 14 0" /><rect x="3" y="13" width="4.5" height="6.5" rx="1.6" /><rect x="16.5" y="13" width="4.5" height="6.5" rx="1.6" /></>,
+  skipBack: <><path d="M18 6v12l-9-6z" /><path d="M7 5v14" /></>,
+  skipForward: <><path d="M6 6v12l9-6z" /><path d="M17 5v14" /></>,
 };
 
 export function Icon({
